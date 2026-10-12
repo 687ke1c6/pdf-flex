@@ -1,0 +1,13 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+
+# Small WASM output; native builds are unaffected in practice
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

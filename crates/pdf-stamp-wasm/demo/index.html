@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pdf-stamp WASM demo</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.3rem; }
+    fieldset { border: 1px solid #ccc; border-radius: 6px; margin: 0 0 1rem; padding: .75rem 1rem; }
+    legend { font-weight: 600; padding: 0 .3rem; }
+    label { display: inline-block; margin: .25rem 1rem .25rem 0; }
+    input[type=number] { width: 5.5rem; }
+    button { font: inherit; padding: .4rem 1rem; cursor: pointer; }
+    #drop { border: 2px dashed #aaa; border-radius: 6px; padding: .6rem; text-align: center; color: #666; margin-top: .5rem; }
+    #drop.over { border-color: #2a6; color: #2a6; }
+    #status { white-space: pre-wrap; background: #f4f4f4; border-radius: 6px; padding: .6rem .8rem; min-height: 1.5em; }
+    #status.error { background: #fde8e8; color: #900; }
+    small { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>pdf-stamp: WASM demo (chunk 2)</h1>
+  <p><small>Everything runs in this tab. Files are read locally and never sent anywhere.</small></p>
+
+  <fieldset>
+    <legend>PDF</legend>
+    <input type="file" id="pdf" accept="application/pdf">
+    <label>or sample <select id="sample-pdf"><option value="">—</option></select></label>
+    <div id="drop">…or drop a PDF anywhere on this page</div>
+    <div><small id="pdf-name">No PDF loaded</small></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Signature</legend>
+    <input type="file" id="sig" accept="image/png,image/jpeg">
+    <button type="button" id="sample-sig">Use sample signature</button>
+    <div><small id="sig-name">No signature loaded</small></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Placement <small>(points from the bottom-left of the page as displayed)</small></legend>
+    <label>Page <input type="number" id="page" value="1" min="1"></label>
+    <label>X <input type="number" id="x" value="40" step="any"></label>
+    <label>Y <input type="number" id="y" value="40" step="any"></label>
+    <label>Width <input type="number" id="width" value="150" min="1" step="any"></label>
+    <div><small id="height">Height follows the signature's aspect ratio.</small></div>
+  </fieldset>
+
+  <p><button type="button" id="go" disabled>Stamp &amp; download</button></p>
+  <div id="status">Loading WASM…</div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

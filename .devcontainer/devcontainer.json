@@ -1,0 +1,25 @@
+{
+  "name": "rust:pdf-sign",
+  "build": { "dockerfile": "Dockerfile" },
+  "remoteUser": "vscode",
+  "forwardPorts": [5172],
+  "portsAttributes": {
+    "5172": { "label": "vite" }
+  },
+  "mounts": [
+    "source=${env:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "Anthropic.claude-code",
+        "ms-azuretools.vscode-containers"
+      ],
+      "settings": {
+        "rust-analyzer.check.command": "clippy"
+      }
+    }
+  }
+}

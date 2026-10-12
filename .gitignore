@@ -1,0 +1,7 @@
+/target
+node_modules/
+dist/
+pkg/
+*.signed.pdf
+/out/
+crates/pdf-stamp-wasm/demo/samples/
