@@ -45,8 +45,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let out = pdf_stamp::stamp(
         &pdf,
-        &sig,
+        &[&sig],
         &[Placement {
+            image: 0,
             page,
             x,
             y,

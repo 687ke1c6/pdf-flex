@@ -1,4 +1,4 @@
-//! Stamp a signature image onto PDF pages.
+//! Stamp signature images onto PDF pages.
 //!
 //! Placements are given in **display space**: PDF points (1/72 in) with the
 //! origin at the bottom-left of the page *as a viewer shows it*, i.e. after the
@@ -9,16 +9,18 @@ mod geometry;
 #[doc(hidden)]
 pub mod testpdf;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, hash_map::Entry};
 
 use image::RgbaImage;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
 
 pub use geometry::{Matrix, PageGeometry};
 
-/// Where to draw the signature, in display-space points.
+/// Which image to draw where, in display-space points.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Placement {
+    /// Index into the `images` passed to [`stamp`].
+    pub image: usize,
     /// 1-based page number.
     pub page: u32,
     /// Bottom-left corner.
@@ -38,14 +40,16 @@ pub enum Error {
     Encrypted,
     #[error("page {page} does not exist (the document has {count} pages)")]
     NoSuchPage { page: u32, count: usize },
+    #[error("placement uses image {index}, but only {count} images were given")]
+    NoSuchImage { index: usize, count: usize },
     #[error("page {page} is malformed: {reason}")]
     BadPage { page: u32, reason: &'static str },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Returns a copy of `pdf` with the `signature` image (PNG or JPEG) drawn at each placement.
-pub fn stamp(pdf: &[u8], signature: &[u8], placements: &[Placement]) -> Result<Vec<u8>> {
+/// Returns a copy of `pdf` with each placement's image (PNG or JPEG bytes from `images`) drawn on it.
+pub fn stamp(pdf: &[u8], images: &[&[u8]], placements: &[Placement]) -> Result<Vec<u8>> {
     let mut doc = Document::load_mem(pdf)?;
     if doc.was_encrypted() {
         return Err(Error::Encrypted);
@@ -54,6 +58,12 @@ pub fn stamp(pdf: &[u8], signature: &[u8], placements: &[Placement]) -> Result<V
     let pages = doc.get_pages();
     let mut by_page: BTreeMap<u32, Vec<&Placement>> = BTreeMap::new();
     for p in placements {
+        if p.image >= images.len() {
+            return Err(Error::NoSuchImage {
+                index: p.image,
+                count: images.len(),
+            });
+        }
         if !pages.contains_key(&p.page) {
             return Err(Error::NoSuchPage {
                 page: p.page,
@@ -66,9 +76,14 @@ pub fn stamp(pdf: &[u8], signature: &[u8], placements: &[Placement]) -> Result<V
         return Ok(pdf.to_vec());
     }
 
-    let image = image::load_from_memory(signature)?.into_rgba8();
-    // One image object, shared by every placement.
-    let image_id = add_image(&mut doc, &image)?;
+    // Each image used is embedded once and shared by all its placements.
+    let mut image_ids: HashMap<usize, ObjectId> = HashMap::new();
+    for p in placements {
+        if let Entry::Vacant(slot) = image_ids.entry(p.image) {
+            let decoded = image::load_from_memory(images[p.image])?.into_rgba8();
+            slot.insert(add_image(&mut doc, &decoded)?);
+        }
+    }
 
     for (page, placements) in by_page {
         let page_id = pages[&page];
@@ -77,14 +92,21 @@ pub fn stamp(pdf: &[u8], signature: &[u8], placements: &[Placement]) -> Result<V
             reason: "no valid MediaBox",
         })?;
         let to_user = geometry.display_to_user();
-        let name = add_xobject_resource(&mut doc, page_id, image_id)?;
-        let name = String::from_utf8_lossy(&name);
+
+        // Resource name for each image used on this page.
+        let mut names: HashMap<usize, String> = HashMap::new();
+        for p in &placements {
+            if let Entry::Vacant(slot) = names.entry(p.image) {
+                let name = add_xobject_resource(&mut doc, page_id, image_ids[&p.image])?;
+                slot.insert(String::from_utf8_lossy(&name).into_owned());
+            }
+        }
 
         let mut ops = String::new();
         for p in placements {
             ops += &format!(
-                "q {to_user} cm {} 0 0 {} {} {} cm /{name} Do Q\n",
-                p.width, p.height, p.x, p.y
+                "q {to_user} cm {} 0 0 {} {} {} cm /{} Do Q\n",
+                p.width, p.height, p.x, p.y, names[&p.image]
             );
         }
         wrap_contents(&mut doc, page_id, page, ops.as_bytes())?;

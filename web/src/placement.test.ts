@@ -74,10 +74,12 @@ describe("resized", () => {
   });
 });
 
-test("toStampArgs flattens to [page, x, y, width, height] groups", () => {
-  const args = toStampArgs([
-    { id: "a", page: 1, ...box },
-    { id: "b", page: 3, x: 1, y: 2, width: 3, height: 4 },
+test("toStampArgs lists each signature once and flattens to [image, page, x, y, width, height] groups", () => {
+  const { signatureIds, groups } = toStampArgs([
+    { id: "a", signatureId: "sig-x", page: 1, ...box },
+    { id: "b", signatureId: "sig-y", page: 3, x: 1, y: 2, width: 3, height: 4 },
+    { id: "c", signatureId: "sig-x", page: 2, x: 5, y: 6, width: 7, height: 8 },
   ]);
-  expect([...args]).toEqual([1, 100, 200, 150, 50, 3, 1, 2, 3, 4]);
+  expect(signatureIds).toEqual(["sig-x", "sig-y"]);
+  expect([...groups]).toEqual([0, 1, 100, 200, 150, 50, 1, 3, 1, 2, 3, 4, 0, 2, 5, 6, 7, 8]);
 });

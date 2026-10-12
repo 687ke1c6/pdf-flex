@@ -1,6 +1,6 @@
 # pdf-sign — Plan
 
-A web app you can install as a PWA. It opens a PDF, lets you drag your signature image onto a page, move and resize it, and save the result as a new PDF.
+A web app you can install as a PWA. It opens a PDF, lets you drag your signature onto a page, move and resize it, and save the result as a new PDF.
 
 **Everything runs in your browser.** The PDF-writing code is Rust compiled to WebAssembly (WASM). The server only hands out static files: no document or signature is ever uploaded.
 
@@ -13,7 +13,8 @@ A web app you can install as a PWA. It opens a PDF, lets you drag your signature
 **In scope**
 - Open a PDF using a file picker or by dragging it onto the page (see §5).
 - Show its pages with scrolling and zoom.
-- Import a signature image (PNG/JPEG) once and keep it in the browser for later sessions.
+- Get a signature three ways: **import** an image (PNG/JPEG), **type** your name in a signature-style font, or **draw** it with a mouse, trackpad, or pen.
+- Keep a **library of saved signatures** in the browser (IndexedDB) for later sessions.
 - Drag the signature onto any page, move it, and resize it with the aspect ratio locked.
 - Place it more than once, including on different pages, and delete a placement.
 - **Save as a download** named `<name>-signed.pdf`. The original file is never touched.
@@ -21,7 +22,6 @@ A web app you can install as a PWA. It opens a PDF, lets you drag your signature
 - The output opens correctly in Acrobat Reader, macOS Preview, Chrome, and Firefox.
 
 **Out of scope for the MVP** (see §11)
-- Drawing a signature with mouse or trackpad
 - Text, date, or initials fields; form filling
 - Editing existing PDF content
 - Saving back over the original file
@@ -38,6 +38,7 @@ A web app you can install as a PWA. It opens a PDF, lets you drag your signature
 | 3 | Encrypt the stored signature? | No. It's a prototype, so store it as plain PNG in IndexedDB |
 | 4 | Frontend framework | SolidJS |
 | 5 | Target platform | Browser-first (works on Windows and Linux). Windows-only native was considered and rejected: it doesn't remove the hard parts, and the dev container is Linux |
+| 6 | Signature sources | Import, type, and draw all produce a **transparent PNG** saved to the same IndexedDB library, so `pdf-stamp` only ever deals with PNG images (it gains support for several different images per document in chunk 5). Typed signatures use bundled open-licence script fonts (no font CDN). Drawn signatures are rasterised at high resolution; vector output is a later idea |
 
 ---
 
@@ -55,9 +56,11 @@ Work proceeds in small chunks. Each one ends with something you can run and chec
 | 3 | Experiment C: viewer UI | A SolidJS + pdf.js viewer at `localhost:5173` | ✅ (pending your Chrome check) |
 | — | **Go/no-go on lopdf** | Continue, or switch to the fallback (§6) | ✅ Go: lopdf stays |
 | 4 | MVP part 1: place and save | **End-to-end:** sign a real PDF in the browser | ✅ (pending your Chrome check) |
-| 5 | Harden the core library | `cargo test` passes against the test-file corpus | 🔜 |
-| 6 | MVP part 2: polish | Signature import, storage, undo, keyboard shortcuts | ⬜ |
-| 7 | PWA and deploy (later) | Installed from a phone or laptop via the Pi | ⬜ |
+| 5 | Signature library | Saved signatures survive a browser restart; pick, rename, delete | ✅ (pending your Chrome check) |
+| 6 | Create signatures: type and draw | Make a signature from typed text or by drawing, and save it to the library | ✅ (pending your Chrome check) |
+| 7 | Harden the core library | `cargo test` passes against the test-file corpus | 🔜 |
+| 8 | Polish | Undo, keyboard shortcuts, unsaved-changes warning, cross-browser check | ⬜ |
+| 9 | PWA and deploy (later) | Installed from a phone or laptop via the Pi | ⬜ |
 
 ### Chunk 0: Environment ✅
 - Dockerfile: `wasm32-unknown-unknown` target, `wasm-pack`, `qpdf`.
@@ -69,7 +72,7 @@ Work proceeds in small chunks. Each one ends with something you can run and chec
   - Placements are in **display space** (see §7.1); Rust handles the CropBox and `/Rotate`, including values inherited from the page tree.
   - The RGB image plus an `/SMask` for transparency, embedded once and shared by every placement.
   - Existing content is wrapped in `q … Q` and the stamp is appended. Page resources are copied, not edited in place, so shared or inherited dictionaries are safe.
-  - Multiple placements and encrypted-PDF refusal came along for free; chunk 5 still covers hardening.
+  - Multiple placements and encrypted-PDF refusal came along for free; chunk 7 still covers hardening.
 - CLI: `just stamp in.pdf sig.png out.pdf --page 1 --at X,Y --width W` (the height follows the image's aspect ratio).
 - `just fixtures` writes six generated test PDFs (plain, rotate 90/180/270 with inherited Rotate, CropBox offset, CropBox + rotate), a sample signature, and stamped copies to `out/`, then runs `qpdf --check` on each.
 - Tests: geometry unit tests, plus round-trip tests over every fixture.
@@ -107,7 +110,7 @@ Work proceeds in small chunks. Each one ends with something you can run and chec
 ### Go/no-go on lopdf ✅
 **Go.** Chunks 1–2 showed lopdf stamps correctly (rotation, CropBox, transparency) and builds for WASM at an acceptable size. No fallback needed.
 
-*Order change:* stamping in the viewer (chunk 4) comes before hardening the library (chunk 5), so the end-to-end flow is usable sooner. The library already supports everything chunk 4 needs.
+*Order change:* stamping in the viewer (chunk 4) and the signature features (chunks 5–6) come before hardening the library (chunk 7), so the app is usable sooner. The library already supports everything chunk 4 needs.
 
 ### Chunk 4: MVP part 1, place and save ✅
 - **Signature:** loaded with a file picker in a new left sidebar (PNG/JPEG; non-images are rejected with a message). Shown on a checkerboard so transparency is visible. Replacing the image keeps existing placements' widths and adopts the new proportions.
@@ -121,24 +124,49 @@ Work proceeds in small chunks. Each one ends with something you can run and chec
 - **Verified (no browser):** typecheck, unit tests, and production build pass (the WASM is emitted once, hashed, next to the worker); the dev server resolves the worker and serves the WASM as `application/wasm`.
 - **Your check:** `just dev`, open a sample or your own PDF, load a signature, place it on a few pages (including a rotated one), move and resize, then download and open the result.
 
-### Chunk 5: Harden the core library
+### Chunk 5: Signature library ✅
+- **IndexedDB store** (`web/src/signatureStore.ts`, hand-written, no dependency): database `pdf-sign`, store `signatures`, records `{ id, name, source: "import" | "typed" | "drawn", png: Blob, width, height, createdAt, lastUsedAt }`. Loaded at startup, most recently used first.
+- **Sidebar library:** thumbnails on a checkerboard. Click one to make it active (used by **Place on page N**); drag any of them onto a page. Rename inline (Enter saves, Escape cancels). Delete is disabled while that signature is placed in the open document.
+- **Import dialog:** choose or drop a PNG/JPEG, see a live preview, toggle **Remove background** and adjust the threshold slider, name it, **Save to library**. Done on a canvas in the browser (`signatureImage.ts`): pixels lighter than the threshold fade to transparent over a soft edge, ink keeps its colour, the result is trimmed to the ink with a small margin, and the longest side is capped at 1600 px. Background removal is off by default for images that are already transparent.
+- **Several signatures in one document:** each placement records its signature. `pdf-stamp::stamp` now takes a list of images, and each `Placement` has an `image` index. Only images actually used are embedded, each once; a page with two different signatures gets two XObject resources. The WASM API takes the images as one concatenated buffer plus a list of lengths, and placements as `[image, page, x, y, width, height]` groups.
+- **Export / import library** as a JSON file (PNGs base64-encoded); importing adds copies with fresh ids. `navigator.storage.persist()` is requested when a signature is first saved.
+- **Tests:** 3 new Rust tests (two images on one page, unused images not embedded, out-of-range image index); 2 new web tests (export/import round trip, rejecting other files). Totals: 11 Rust, 15 web.
+- **Your check:** import an image (try a photo of a signature on paper), import a second, reload the browser and confirm both are still there; place both in one document, download, and check the result; rename and delete; export the library and import it again.
+
+### Chunk 6: Create signatures: type and draw ✅
+The sidebar's **New signature…** button opens one dialog with **Type · Draw · Import** tabs (`NewSignatureDialog.tsx`). Tabs stay mounted, so switching doesn't lose work; a shared **Name** field follows the active tab's suggestion until you edit it; **Save to library** stores the result. Dropping an image anywhere on the dialog switches to Import.
+- **Type:**
+  - Your name previewed live in four script fonts: Great Vibes, Dancing Script, Allura, Caveat (SIL OFL 1.1, from pinned `@fontsource` packages, bundled locally by Vite and split by script so only needed subsets download).
+  - Black or dark-blue ink.
+  - Rendered with `document.fonts.load` first (no fallback-font first render), at a 160 px font size (reduced for long names to keep under 1600 px), padded for swashes, then trimmed to the ink (`typedSignature.ts`).
+- **Draw:**
+  - Canvas pad at device-pixel resolution, sized by a `ResizeObserver` (it starts in a hidden tab). Pointer events with `touch-action: none` and pointer capture; coalesced events for smooth fast strokes.
+  - Curves through the midpoints between samples; pen pressure varies width between about 0.4× and 1.6× (mouse and touch use a constant width).
+  - Undo stroke, Clear, ink colour. The baseline guide and hint are page elements, so they're never exported.
+  - Exported by re-drawing the strokes at 3× the pad size, then trimming (`drawing.ts`).
+- **Recipes:** stored signatures gain an optional `recipe` (typed text, font and colour, or the raw strokes and pad size), kept for possible vector output later and included in library exports.
+- **Fix found on the way:** library records are Solid store proxies, which IndexedDB can't clone once they contain nested objects (like strokes); records are now `unwrap`ped before saving.
+- **Tests:** 3 new web tests for stroke smoothing, single-tap dots, and pressure widths (18 web tests in total).
+- **Your check:** type your name and try each font and both inks; draw a signature with the mouse (and a pen or touch screen if you have one), use Undo stroke and Clear; save both, place them, download, and zoom to 200% in a PDF viewer to check they're crisp.
+
+### Chunk 7: Harden the core library
 Already done in chunk 1: multiple placements sharing one image, rotation (0/90/180/270) and CropBox handling, refusing encrypted PDFs.
-- Signature preparation in Rust: background removal by threshold, trim, and downscale to a sensible maximum size.
 - A test-file corpus (scanner output, Word exports, forms, slightly malformed files); `qpdf --check` on every output.
 - Load untrusted PDFs with a decompression limit (`LoadOptions::max_decompressed_size`).
 - Clear, user-facing error messages for each failure case.
 
-### Chunk 6: MVP part 2, polish
-- Import the signature with a preview; store it in IndexedDB; `navigator.storage.persist()`.
-- Undo/redo; arrow-key nudging; Delete to remove.
+### Chunk 8: Polish
+- Undo/redo; arrow-key nudging.
+- Drag a placement from one page to another.
 - Unsaved-changes warning (`beforeunload`).
-- Spot-check Edge, Firefox, and Safari.
+- Spot-check Edge, Firefox, and Safari (including touch drawing and drag on iOS).
 
-### Chunk 7: PWA and deploy (later)
+### Chunk 9: PWA and deploy (later)
 - Manifest, icons, and a service worker (`vite-plugin-pwa`) for offline use.
 - Strict CSP; confirm in DevTools that opening and saving make zero network requests.
 - `just deploy`: build, then rsync `web/dist/` to the Pi.
 - Serve from the Pi behind the Tailscale reverse proxy (§9).
+- Include third-party licence notices in the build: the OFL licence for the bundled fonts (required when redistributing them) and pdf.js's Apache-2.0 licence.
 
 ---
 
@@ -198,8 +226,12 @@ URL.revokeObjectURL(url);
 ```
 The browser saves it like any other download. Depending on the user's browser settings, it either goes straight to Downloads or asks where to save. On iOS it goes to the Files app.
 
-### Importing the signature image
-Use the same picker (`accept="image/png,image/jpeg"`) or drag and drop. The processed PNG is then stored in **IndexedDB** so it's still there next time.
+### Getting a signature
+- **Import:** the same picker (`accept="image/png,image/jpeg"`) or drag and drop.
+- **Type:** rendered from text in a bundled script font onto a canvas.
+- **Draw:** captured on a canvas drawing pad with pointer events.
+
+Each ends up as a transparent PNG stored in **IndexedDB** (the signature library), so it's still there next time.
 
 ---
 
@@ -213,7 +245,7 @@ Use the same picker (`accept="image/png,image/jpeg"`) or drag and drop. The proc
 │   ├─ Overlay layer → signature <img> with drag/resize handles (pointer events)     │
 │   ├─ State: placements[] in display space                                          │
 │   │        { page, x, y, width, height }   (points, bottom-left of page as shown)  │
-│   ├─ IndexedDB → stored signature PNG                                              │
+│   ├─ IndexedDB → signature library (imported / typed / drawn PNGs)                 │
 │   └─ Save: Blob → object URL → <a download="…-signed.pdf">                         │
 │                         │ postMessage (bytes, png, placements)                     │
 │  ┌──────────────────────▼─────────────────────────────────────────────────────┐    │
@@ -299,7 +331,7 @@ Roughly in order of how much they will hurt.
 - **Mitigations:**
   - Call `navigator.storage.persist()`.
   - Make re-importing the signature a one-click action.
-  - Optionally offer "Export signature" as a download so the user keeps their own copy.
+  - Offer **Export library** as a download so the user keeps their own copy (chunk 5).
 
 ### 7.6 Privacy and trust
 - Users have to trust that a hosted web app doesn't upload their files, and its code changes whenever you deploy. Make "nothing leaves your device" verifiable:
@@ -328,6 +360,7 @@ Roughly in order of how much they will hurt.
 - Keyboard nudging with arrow keys, and Delete to remove.
 - Large PDFs (hundreds of pages): render pages lazily and virtualize the page list. Run pdf.js in its worker.
 - Make sure what you see is what gets saved. Optionally re-render the saved bytes with pdf.js before downloading.
+- **Typed and drawn signatures:** render at high resolution (not screen size) so they print crisply; trim empty space so the placement box hugs the ink; wait for web fonts to load before drawing text to a canvas, or the first render uses a fallback font.
 
 ### 7.10 Licensing
 | Library | Licence | Note |
@@ -335,6 +368,7 @@ Roughly in order of how much they will hurt.
 | pdf.js | Apache-2.0 | ✅ |
 | lopdf | MIT | ✅ |
 | image | MIT / Apache-2.0 | ✅ |
+| Script fonts (Dancing Script, Great Vibes, Caveat, Allura) | SIL Open Font Licence 1.1 | ✅ Bundle with their licence files |
 | pdfium (via `pdfium-render`) | BSD-3 / Apache-2.0 | ✅ but hard to use from WASM |
 | **MuPDF** | **AGPL** or commercial | ⚠️ Avoid unless the app will be open-sourced under AGPL |
 
@@ -393,7 +427,7 @@ What it costs:
 
 ## 11. Later / post-MVP ideas
 
-- Draw a signature with mouse, trackpad, or stylus, stored as vector paths for crisp output at any size.
+- Drawn and typed signatures as **vector** output (PDF paths, or an embedded font for text) for crisp output at any size.
 - Text stamps: printed name, date, initials.
 - Fill AcroForm fields.
 - Merge, split, or reorder pages.

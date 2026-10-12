@@ -4,7 +4,9 @@ import { toStampArgs, type Placement } from "./placement";
 export interface StampRequest {
   id: number;
   pdf: Uint8Array;
-  signature: Uint8Array;
+  /** Image files concatenated; split by `imageLengths`. */
+  images: Uint8Array;
+  imageLengths: Uint32Array;
   placements: Float64Array;
 }
 
@@ -33,13 +35,31 @@ function getWorker(): Worker {
   return worker;
 }
 
-/** Returns a new PDF with the signature drawn at each placement. The inputs are not modified. */
-export function stampPdf(pdf: Uint8Array, signature: Uint8Array, placements: Placement[]): Promise<Uint8Array<ArrayBuffer>> {
+/**
+ * Returns a new PDF with each placement's signature drawn on it. `images` maps
+ * signature ids to their PNG bytes. The inputs are not modified.
+ */
+export function stampPdf(
+  pdf: Uint8Array,
+  placements: Placement[],
+  images: Map<string, Uint8Array>,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const { signatureIds, groups } = toStampArgs(placements);
+  const files = signatureIds.map((sigId) => {
+    const bytes = images.get(sigId);
+    if (!bytes) throw new Error(`Missing image for signature ${sigId}`);
+    return bytes;
+  });
+  const imageLengths = new Uint32Array(files.map((f) => f.length));
+  const concatenated = new Uint8Array(imageLengths.reduce((sum, n) => sum + n, 0));
+  files.reduce((offset, f) => (concatenated.set(f, offset), offset + f.length), 0);
+
   const id = nextId++;
-  // Copies, because their buffers are transferred to the worker.
-  const request: StampRequest = { id, pdf: pdf.slice(), signature: signature.slice(), placements: toStampArgs(placements) };
+  // pdf is copied because its buffer is transferred to the worker.
+  const request: StampRequest = { id, pdf: pdf.slice(), images: concatenated, imageLengths, placements: groups };
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    getWorker().postMessage(request, [request.pdf.buffer, request.signature.buffer, request.placements.buffer]);
+    const transfer = [request.pdf.buffer, request.images.buffer, request.imageLengths.buffer, request.placements.buffer];
+    getWorker().postMessage(request, transfer);
   });
 }

@@ -54,9 +54,10 @@ export function App() {
 
   // Drag and drop anywhere in the window.
   // Chrome also reports "Files" when an <img> is dragged, so exclude our own signature drag.
+  // While a dialog is open, it handles its own drops (e.g. importing a signature image).
   const isFileDrag = (e: DragEvent) => {
     const types = e.dataTransfer?.types ?? [];
-    return types.includes("Files") && !types.includes(SIGNATURE_DRAG_TYPE);
+    return types.includes("Files") && !types.includes(SIGNATURE_DRAG_TYPE) && !document.querySelector("dialog[open]");
   };
   // Capture phase: runs even if a drop target (e.g. a page) stops propagation.
   const endDrag = () => setDragging(false);
@@ -80,12 +81,16 @@ export function App() {
 
   async function save() {
     const f = file();
-    const sig = editor.signature();
-    if (!f || !sig || !editor.placements.length) return;
+    if (!f || !editor.placements.length) return;
     setError("");
     setSaving(true);
     try {
-      download(await stampPdf(f.bytes, sig.bytes, editor.placements), signedName(f.name));
+      const images = new Map<string, Uint8Array>();
+      for (const { signatureId } of editor.placements) {
+        const sig = editor.signature(signatureId);
+        if (sig && !images.has(signatureId)) images.set(signatureId, new Uint8Array(await sig.png.arrayBuffer()));
+      }
+      download(await stampPdf(f.bytes, editor.placements, images), signedName(f.name));
     } catch (err) {
       setError(`Couldn't save: ${err instanceof Error ? err.message : err}`);
     } finally {
@@ -126,6 +131,7 @@ export function App() {
       window.removeEventListener("drop", endDrag, { capture: true });
       window.removeEventListener("keydown", onKeyDown);
     });
+    editor.loadLibrary().catch((err) => setError(`Couldn't load saved signatures: ${err instanceof Error ? err.message : err}`));
     if (import.meta.env.DEV) {
       fetch("/samples/index.json")
         .then((r) => (r.ok ? r.json() : []))

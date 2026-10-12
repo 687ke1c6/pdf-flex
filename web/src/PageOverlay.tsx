@@ -33,7 +33,8 @@ export function PageOverlay(props: Props) {
     if (!e.dataTransfer?.types.includes(SIGNATURE_DRAG_TYPE)) return;
     e.preventDefault();
     e.stopPropagation();
-    editor.add(props.pageNumber, pointerOnPage(e, e.currentTarget as Element));
+    const signatureId = e.dataTransfer.getData(SIGNATURE_DRAG_TYPE) || undefined;
+    editor.add(props.pageNumber, pointerOnPage(e, e.currentTarget as Element), signatureId);
   }
 
   return (
@@ -109,7 +110,9 @@ function PlacementBox(props: BoxProps) {
       }}
       onPointerDown={startMove}
     >
-      <Show when={editor.signature()}>{(sig) => <img src={sig().url} alt="Signature" draggable={false} />}</Show>
+      <Show when={editor.signature(props.placement.signatureId)}>
+        {(sig) => <img src={sig().url} alt={sig().name} draggable={false} />}
+      </Show>
       <Show when={isSelected()}>
         <For each={CORNERS}>{(corner) => <div class={`handle ${corner}`} onPointerDown={(e) => startResize(e, corner)} />}</For>
         <button

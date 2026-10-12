@@ -73,12 +73,6 @@ button.icon { border: none; background: none; padding: 0 0.3rem; font-size: 1.1r
 button.icon:hover { color: var(--danger); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Checkerboard behind the signature shows its transparency. */
-.signature-thumb {
-  display: block; width: 100%; max-height: 7rem; object-fit: contain; cursor: grab;
-  border: 1px solid var(--border); border-radius: 4px;
-  background: repeating-conic-gradient(#eee 0 25%, white 0 50%) 0 0 / 12px 12px;
-}
 .placements { list-style: none; margin: 0; padding: 0; }
 .placements li { display: flex; justify-content: space-between; align-items: center; padding: 0.15rem 0.3rem; border-radius: 4px; }
 .placements li.selected { background: rgb(37 99 235 / 0.1); }
@@ -104,3 +98,47 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   position: absolute; top: -1.6rem; right: -0.5rem; width: 1.3rem; height: 1.3rem; padding: 0;
   border-radius: 50%; line-height: 1; font-size: 0.95rem; color: var(--danger);
 }
+
+/* Signature library. The checkerboard shows transparency. */
+.checkerboard { background: repeating-conic-gradient(#eee 0 25%, white 0 50%) 0 0 / 12px 12px; }
+.library { list-style: none; margin: 0 0 0.25rem; padding: 0; display: grid; gap: 0.5rem; }
+.library li { border: 1.5px solid var(--border); border-radius: 6px; padding: 0.3rem; background: white; }
+.library li.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgb(37 99 235 / 0.15); }
+.library img { display: block; width: 100%; height: 3.5rem; object-fit: contain; cursor: grab; border-radius: 3px; }
+.library-meta { display: flex; align-items: center; gap: 0.15rem; margin-top: 0.2rem; }
+.library-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; }
+.library-meta input { flex: 1; min-width: 0; font-size: 0.85rem; }
+.library-file { display: flex; gap: 0.4rem; justify-content: center; font-size: 0.85rem; color: var(--muted); margin-top: 0.3rem; }
+
+/* Dialogs */
+.dialog { border: none; border-radius: 8px; padding: 1.25rem; width: min(32rem, calc(100vw - 2rem)); box-shadow: 0 10px 40px rgb(0 0 0 / 0.25); }
+.dialog::backdrop { background: rgb(0 0 0 / 0.35); }
+.dialog h2 { margin: 0 0 1rem; font-size: 1.1rem; }
+.dialog .hint { color: var(--muted); font-size: 0.85rem; margin: 0.3rem 0 0.6rem; }
+.dialog .row { display: flex; align-items: center; gap: 0.6rem; margin: 0.5rem 0; }
+.dialog .row input[type="range"], .dialog .row input[type="text"] { flex: 1; }
+.dialog .row.disabled { color: var(--muted); }
+.dropzone { border: 2px dashed var(--border); border-radius: 8px; padding: 2rem 1rem; text-align: center; }
+.preview { display: flex; align-items: center; justify-content: center; min-height: 8rem; max-height: 14rem; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; }
+.preview canvas { max-width: 100%; max-height: 13rem; object-fit: contain; }
+.dialog-error { color: var(--danger); background: var(--danger-bg); padding: 0.4rem 0.6rem; border-radius: 4px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+
+/* New signature dialog */
+.tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin-bottom: 0.9rem; }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 0.4rem 0.9rem; color: var(--muted); }
+.tabs button.active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
+.font-options { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin: 0.6rem 0; }
+.font-options button {
+  font-size: 2rem; line-height: 1.2; padding: 0.6rem 0.5rem; min-height: 4.2rem; background: white;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.font-options button.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgb(37 99 235 / 0.15); }
+.swatch { width: 1.5rem; height: 1.5rem; padding: 0; border-radius: 50%; background: var(--swatch); border: 2px solid white; box-shadow: 0 0 0 1px var(--border); }
+.swatch.active { box-shadow: 0 0 0 2px var(--accent); }
+.dialog .spacer { flex: 1; }
+.pad-wrap { position: relative; }
+.pad { display: block; width: 100%; touch-action: none; cursor: crosshair; background: white; border: 1px solid var(--border); border-radius: 6px; }
+/* Guide line and hint are page elements, not canvas pixels, so they're never exported. */
+.pad-baseline { position: absolute; left: 8%; right: 8%; bottom: 28%; border-bottom: 1px dashed #c8cbd0; pointer-events: none; }
+.pad-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; }

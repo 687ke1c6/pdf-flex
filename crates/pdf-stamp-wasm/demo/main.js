@@ -74,10 +74,10 @@ $("width").addEventListener("input", refresh);
 
 $("go").addEventListener("click", () => {
   const width = Number($("width").value);
-  const placement = [Number($("page").value), Number($("x").value), Number($("y").value), width, width / state.aspect];
+  const placement = [0, Number($("page").value), Number($("x").value), Number($("y").value), width, width / state.aspect];
   try {
     const started = performance.now();
-    const out = stamp(state.pdf, state.sig, new Float64Array(placement));
+    const out = stamp(state.pdf, state.sig, new Uint32Array([state.sig.length]), new Float64Array(placement));
     const ms = (performance.now() - started).toFixed(1);
     download(out, state.pdfName.replace(/\.pdf$/i, "") + "-signed.pdf");
     status(`Stamped in ${ms} ms → ${(out.length / 1024).toFixed(1)} KB, downloaded.`);

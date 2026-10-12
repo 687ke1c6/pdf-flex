@@ -6,6 +6,8 @@ import type { PageSize } from "./pdf";
 
 export interface Placement {
   id: string;
+  /** Which saved signature is drawn here. */
+  signatureId: string;
   /** 1-based page number. */
   page: number;
   /** Bottom-left corner, in points. */
@@ -96,7 +98,12 @@ export function resized(box: Box, corner: Corner, pointer: Point, page: PageSize
   };
 }
 
-/** The flat `[page, x, y, width, height, …]` layout the WASM `stamp` function takes. */
-export function toStampArgs(placements: Placement[]): Float64Array {
-  return new Float64Array(placements.flatMap((p) => [p.page, p.x, p.y, p.width, p.height]));
+/**
+ * The arguments the WASM `stamp` function takes: the distinct signatures used
+ * (in image-index order) and flat `[image, page, x, y, width, height, …]` groups.
+ */
+export function toStampArgs(placements: Placement[]): { signatureIds: string[]; groups: Float64Array } {
+  const signatureIds = [...new Set(placements.map((p) => p.signatureId))];
+  const groups = placements.flatMap((p) => [signatureIds.indexOf(p.signatureId), p.page, p.x, p.y, p.width, p.height]);
+  return { signatureIds, groups: new Float64Array(groups) };
 }

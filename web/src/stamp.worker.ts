@@ -11,11 +11,11 @@ const scope = self as unknown as {
 
 const ready = init({ module_or_path: wasmUrl });
 
-scope.onmessage = async ({ data: { id, pdf, signature, placements } }) => {
+scope.onmessage = async ({ data: { id, pdf, images, imageLengths, placements } }) => {
   try {
     await ready;
     // wasm-bindgen returns a fresh copy on an ordinary (non-shared) ArrayBuffer.
-    const out = stamp(pdf, signature, placements) as Uint8Array<ArrayBuffer>;
+    const out = stamp(pdf, images, imageLengths, placements) as Uint8Array<ArrayBuffer>;
     scope.postMessage({ id, ok: true, pdf: out }, [out.buffer]);
   } catch (err) {
     scope.postMessage({ id, ok: false, error: err instanceof Error ? err.message : String(err) });

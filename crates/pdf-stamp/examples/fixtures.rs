@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let target = fixture.target(aspect);
         let pdf = testpdf::build(&fixture, &target);
         fs::write(format!("out/fixtures/{}.pdf", fixture.name), &pdf)?;
-        let stamped = pdf_stamp::stamp(&pdf, &sig, &[target])?;
+        let stamped = pdf_stamp::stamp(&pdf, &[&sig], &[target])?;
         fs::write(format!("out/stamped/{}.pdf", fixture.name), stamped)?;
         println!("{}", fixture.name);
     }

@@ -30,6 +30,7 @@ impl Fixture {
         let (w, _) = self.geometry().display_size();
         let width = 150.0;
         Placement {
+            image: 0,
             page: 1,
             x: w - width - 40.0,
             y: 40.0,
