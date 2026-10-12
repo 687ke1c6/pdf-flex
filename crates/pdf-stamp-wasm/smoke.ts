@@ -1,9 +1,9 @@
-// Runs the built WASM package (demo/pkg) under Bun: stamps a fixture and writes out/wasm-smoke.pdf.
+// Runs the built WASM package (pkg/) under Bun: stamps a fixture and writes out/wasm-smoke.pdf.
 // Usage: bun crates/pdf-stamp-wasm/smoke.ts   (after `just wasm` and `just fixtures`)
 import { readFileSync, writeFileSync } from "node:fs";
-import { initSync, stamp } from "./demo/pkg/pdf_stamp_wasm.js";
+import { initSync, stamp } from "./pkg/pdf_stamp_wasm.js";
 
-initSync({ module: readFileSync(new URL("./demo/pkg/pdf_stamp_wasm_bg.wasm", import.meta.url)) });
+initSync({ module: readFileSync(new URL("./pkg/pdf_stamp_wasm_bg.wasm", import.meta.url)) });
 
 const pdf = readFileSync("out/fixtures/rotate-90.pdf");
 const sig = readFileSync("out/sig.png");
