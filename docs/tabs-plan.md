@@ -105,8 +105,8 @@ Built in one go, with chunks 1 and 2 together rather than the refactor first on 
 ### After review: one top row, and tab mode
 - **One row at the top** (the tab bar and the top bar merged, saving about 40 px): tabs on the left, then undo, redo and Download on the right. Tabs are rounded and the active one is white. The active tab is the document's header, so the separate document title only shows with tabs off.
 - **Page and zoom moved to the status bar**, on the right before Settings: `Page 2/5 │ − 100% + Fit`. Clicking the percentage goes back to 100%. On narrow screens "Page" and Fit are hidden.
-- **Tab mode** (Settings → Tabs → "Open documents in tabs", on by default, remembered as `pdf-flex:tabs-mode`):
-  - **Off:** no tab bar. The top row shows the document title, with **×** to close it (its draft is kept) and go back to the start screen. Opening another document (Ctrl+O, drop, or a draft) replaces the current one, asking first only if its work isn't safely in a draft. Several files at once: only the first opens, with a message. Alt+1…9 and Alt+[ ] do nothing. After a reload, only the document that was in front comes back.
+- **Tab mode** (Settings → Tabs → "Open documents in tabs", **off by default**, remembered as `pdf-flex:tabs-mode`):
+  - **Off:** no tab bar. With no document open there's no top row at all, just the start screen. The top row shows the document title, with **×** to close it (its draft is kept) and go back to the start screen. Opening another document (Ctrl+O, drop, or a draft) replaces the current one, asking first only if its work isn't safely in a draft. Several files at once: only the first opens, with a message. Alt+1…9 and Alt+[ ] do nothing. After a reload, only the document that was in front comes back.
   - **Switching off** with several open: the tab in front stays, the rest close (drafts kept), asking first if any has unsaved work. Cancelling leaves tabs on.
   - **Switching on:** the current document becomes the first tab.
 - **Your checks:**

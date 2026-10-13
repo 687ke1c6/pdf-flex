@@ -140,13 +140,13 @@ const TABS_MODE_KEY = "pdf-flex:tabs-mode";
 
 function loadTabsMode(): boolean {
   try {
-    return localStorage.getItem(TABS_MODE_KEY) !== "off";
+    return localStorage.getItem(TABS_MODE_KEY) === "on";
   } catch {
-    return true;
+    return false;
   }
 }
 
-/** Whether documents open in tabs. On unless turned off. */
+/** Whether documents open in tabs. Off unless turned on. */
 export const [tabsMode, setTabsModeSignal] = createSignal(loadTabsMode());
 
 export function setTabsMode(on: boolean) {

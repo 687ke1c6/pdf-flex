@@ -480,81 +480,84 @@ export function App() {
 
   return (
     <div class="app">
-      <header class="toolbar">
-        {/* Used by the start screen's Open PDF… button and Ctrl/Cmd+O. */}
-        <input
-          ref={fileInput}
-          type="file"
-          accept="application/pdf,.pdf"
-          multiple={tabsMode()}
-          hidden
-          onChange={async (e) => {
-            const files = [...(e.currentTarget.files ?? [])];
-            e.currentTarget.value = "";
-            await openFiles(files);
-          }}
-        />
+      {/* Used by the start screen's Open PDF… button and Ctrl/Cmd+O. */}
+      <input
+        ref={fileInput}
+        type="file"
+        accept="application/pdf,.pdf"
+        multiple={tabsMode()}
+        hidden
+        onChange={async (e) => {
+          const files = [...(e.currentTarget.files ?? [])];
+          e.currentTarget.value = "";
+          await openFiles(files);
+        }}
+      />
+      {/* With tabs off and no document, the top row would be empty: it's left out. */}
+      <Show when={tabsMode() || active()}>
+        <header class="toolbar">
 
-        {/* With tabs, the active tab is the document's header; without, its title is. */}
-        <Show
-          when={tabsMode()}
-          fallback={
-            <Show when={active()}>
-              {(s) => {
-                const base = () => s().name.replace(/\.pdf$/i, "");
-                const ext = () => s().name.slice(base().length);
-                const pages = () => s().pdf.pages.length;
-                return (
-                  <div class="doc-title" title={s().name}>
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M6 2.5h8l5 5V20a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20V4a1.5 1.5 0 0 1 1-1.5z" />
-                      <path d="M14 2.5V7.5h5M8.5 12.5h7M8.5 16h5" />
-                    </svg>
-                    <h1 class="doc-name">
-                      <span class="doc-base">{base()}</span>
-                      <span class="doc-ext">{ext()}</span>
-                    </h1>
-                    <span class="doc-meta">
-                      {pages()} {pages() === 1 ? "page" : "pages"}
-                    </span>
-                    <button class="doc-close" title="Close document (its draft is kept)" aria-label="Close document" onClick={() => void closeTab(activeKey())}>
-                      ×
-                    </button>
-                  </div>
-                );
-              }}
-            </Show>
-          }
-        >
-          <TabBar
-            tabs={tabs()}
-            activeKey={activeKey()}
-            canAdd={!tabs().some(isEmptyTab)}
-            onSelect={(k) => void show(k)}
-            onClose={(k) => void closeTab(k)}
-            onNew={newTab}
-          />
-        </Show>
-        <span class="spacer" />
-        <Show when={active()}>
-          {(s) => (
-            <span class="edit-actions">
-              <button class="icon-button" title="Undo (Ctrl Z)" aria-label="Undo" disabled={!editor.canUndo()} onClick={() => editor.undo()}>
-                ↶
-              </button>
-              <button class="icon-button" title="Redo (Ctrl Shift Z)" aria-label="Redo" disabled={!editor.canRedo()} onClick={() => editor.redo()}>
-                ↷
-              </button>
-              <DownloadButton
-                title="Download a copy with your changes"
-                label={s().saving() ? "Saving…" : "Download PDF"}
-                disabled={!editor.placements.length || s().saving()}
-                onClick={startDownload}
-              />
-            </span>
-          )}
-        </Show>
-      </header>
+          {/* With tabs, the active tab is the document's header; without, its title is. */}
+          <Show
+            when={tabsMode()}
+            fallback={
+              <Show when={active()}>
+                {(s) => {
+                  const base = () => s().name.replace(/\.pdf$/i, "");
+                  const ext = () => s().name.slice(base().length);
+                  const pages = () => s().pdf.pages.length;
+                  return (
+                    <div class="doc-title" title={s().name}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M6 2.5h8l5 5V20a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20V4a1.5 1.5 0 0 1 1-1.5z" />
+                        <path d="M14 2.5V7.5h5M8.5 12.5h7M8.5 16h5" />
+                      </svg>
+                      <h1 class="doc-name">
+                        <span class="doc-base">{base()}</span>
+                        <span class="doc-ext">{ext()}</span>
+                      </h1>
+                      <span class="doc-meta">
+                        {pages()} {pages() === 1 ? "page" : "pages"}
+                      </span>
+                      <button class="doc-close" title="Close document (its draft is kept)" aria-label="Close document" onClick={() => void closeTab(activeKey())}>
+                        ×
+                      </button>
+                    </div>
+                  );
+                }}
+              </Show>
+            }
+          >
+            <TabBar
+              tabs={tabs()}
+              activeKey={activeKey()}
+              canAdd={!tabs().some(isEmptyTab)}
+              onSelect={(k) => void show(k)}
+              onClose={(k) => void closeTab(k)}
+              onNew={newTab}
+            />
+          </Show>
+          <span class="spacer" />
+          <Show when={active()}>
+            {(s) => (
+              <span class="edit-actions">
+                <button class="icon-button" title="Undo (Ctrl Z)" aria-label="Undo" disabled={!editor.canUndo()} onClick={() => editor.undo()}>
+                  ↶
+                </button>
+                <button class="icon-button" title="Redo (Ctrl Shift Z)" aria-label="Redo" disabled={!editor.canRedo()} onClick={() => editor.redo()}>
+                  ↷
+                </button>
+                <DownloadButton
+                  title="Download a copy with your changes"
+                  label={s().saving() ? "Saving…" : "Download PDF"}
+                  disabled={!editor.placements.length || s().saving()}
+                  onClick={startDownload}
+                />
+              </span>
+            )}
+          </Show>
+        </header>
+      </Show>
 
       <UpdatePrompt />
       <Show when={settings()}>
