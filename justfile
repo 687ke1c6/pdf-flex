@@ -22,6 +22,10 @@ fixtures:
     @# 120 pages mixing every fixture (rotations, crop boxes) for viewer testing
     @qpdf --empty --pages $(for i in $(seq 20); do printf 'out/fixtures/%s ' $(ls out/fixtures); done) -- out/many-pages.pdf && echo "wrote out/many-pages.pdf"
 
+# Chunk 7: regenerate the synthetic half of the test corpus (outputs are committed; needs qpdf)
+corpus:
+    cargo run -q -p pdf-stamp --example corpus
+
 # Stamp a signature onto a PDF, e.g. just stamp in.pdf sig.png out.pdf --page 1 --at 400,40 --width 150
 stamp *args:
     cargo run -q -p pdf-stamp --example stamp -- {{args}}
@@ -31,10 +35,12 @@ wasm:
     wasm-pack build crates/pdf-stamp-wasm --target web --release --no-pack
     @ls -l crates/pdf-stamp-wasm/pkg/pdf_stamp_wasm_bg.wasm | awk '{printf "wasm size: %.0f KB\n", $5/1024}'
 
-# Run the WASM build headlessly under Bun and validate its output
+# Run the WASM build headlessly under Bun and validate its output; check it agrees with pdf.js on the corpus
 wasm-smoke: fixtures wasm
     bun crates/pdf-stamp-wasm/smoke.ts
     qpdf --check out/wasm-smoke.pdf > /dev/null && echo "qpdf ok: out/wasm-smoke.pdf"
+    cd web && bun install --frozen-lockfile
+    bun crates/pdf-stamp-wasm/corpus.ts 2> /dev/null
 
 # Chunk 2: serve the bare WASM demo page on http://localhost:5173
 demo: fixtures wasm

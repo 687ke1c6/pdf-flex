@@ -1,8 +1,9 @@
 FROM mcr.microsoft.com/devcontainers/rust:1-bookworm
 
-# unzip is required by the Bun installer; qpdf validates generated PDFs
+# unzip is required by the Bun installer; qpdf validates generated PDFs;
+# poppler-utils (pdftoppm) renders them for the corpus tests
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends unzip qpdf \
+    && apt-get install -y --no-install-recommends unzip qpdf poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 USER vscode

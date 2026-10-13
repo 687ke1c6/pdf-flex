@@ -21,7 +21,7 @@ fn stamps_every_fixture() {
         // Geometry (including inherited /Rotate) survives the round trip.
         assert_eq!(
             PageGeometry::read(&doc, page_id),
-            Some(fixture.geometry()),
+            fixture.geometry(),
             "{}",
             fixture.name
         );
@@ -197,4 +197,197 @@ fn rejects_missing_image() {
     };
     let err = stamp(&testpdf::build(fixture, &target), &[&sig], &[target]).unwrap_err();
     assert!(matches!(err, Error::NoSuchImage { index: 1, count: 1 }));
+}
+
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut out = std::io::Cursor::new(Vec::new());
+    image::GrayImage::new(width, height)
+        .write_to(&mut out, image::ImageFormat::Png)
+        .unwrap();
+    out.into_inner()
+}
+
+#[test]
+fn rejects_invalid_placements() {
+    let (sig, aspect) = sample();
+    let fixture = &testpdf::fixtures()[0];
+    let target = fixture.target(aspect);
+    let pdf = testpdf::build(fixture, &target);
+    for bad in [
+        Placement {
+            x: f32::NAN,
+            ..target
+        },
+        Placement {
+            width: 0.0,
+            ..target
+        },
+        Placement {
+            height: -5.0,
+            ..target
+        },
+        Placement {
+            y: f32::INFINITY,
+            ..target
+        },
+    ] {
+        let err = stamp(&pdf, &[&sig], &[target, bad]).unwrap_err();
+        assert!(
+            matches!(err, Error::BadPlacement { index: 1 }),
+            "{bad:?}: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn rejects_unreadable_and_oversized_images() {
+    let fixture = &testpdf::fixtures()[0];
+    let target = fixture.target(3.0);
+    let pdf = testpdf::build(fixture, &target);
+
+    let err = stamp(&pdf, &[b"not an image"], &[target]).unwrap_err();
+    assert!(matches!(err, Error::BadImage(_)), "{err:?}");
+
+    // The size is refused from the header, before the pixels are decoded.
+    let err = stamp(&pdf, &[&png(10_001, 1)], &[target]).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::ImageTooLarge {
+                width: 10_001,
+                height: 1
+            }
+        ),
+        "{err:?}"
+    );
+    assert!(stamp(&pdf, &[&png(10_000, 1)], &[target]).is_ok());
+}
+
+#[test]
+fn shared_resources_are_copied_not_edited() {
+    let pdf = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/corpus/generated/shared-resources.pdf"
+    ))
+    .unwrap();
+    let (sig, _) = sample();
+    let target = Placement {
+        image: 0,
+        page: 1,
+        x: 40.0,
+        y: 40.0,
+        width: 150.0,
+        height: 50.0,
+    };
+    let out = stamp(&pdf, &[&sig], &[target]).unwrap();
+
+    let doc = Document::load_mem(&out).unwrap();
+    let pages = doc.get_pages();
+    let resources = |page| {
+        doc.get_dictionary(pages[&page])
+            .unwrap()
+            .get(b"Resources")
+            .unwrap()
+            .clone()
+    };
+    // Page 2 still points at the shared dictionary, which gained nothing.
+    let shared = resources(2).as_reference().unwrap();
+    let xobjects = doc
+        .get_dictionary(shared)
+        .unwrap()
+        .get(b"XObject")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    let xobjects = doc.get_dictionary(xobjects).unwrap();
+    assert!(xobjects.has(b"Fm0") && !xobjects.has(b"PdfSign0"));
+    // Page 1 has its own copy with both the original form and the signature.
+    let own = resources(1);
+    let own = own
+        .as_dict()
+        .unwrap()
+        .get(b"XObject")
+        .unwrap()
+        .as_dict()
+        .unwrap();
+    assert!(own.has(b"Fm0") && own.has(b"PdfSign0"));
+}
+
+#[test]
+fn errors_read_as_plain_sentences() {
+    let err = stamp(b"<html>", &[], &[]).unwrap_err();
+    assert_eq!(err.to_string(), "This file isn't a PDF.");
+    assert!(
+        Error::Encrypted
+            .to_string()
+            .starts_with("This PDF is password-protected")
+    );
+}
+
+#[test]
+fn removes_reader_usage_rights() {
+    let pdf = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/corpus/real/irs-w9-xfa-form.pdf"
+    ))
+    .unwrap();
+    let has_usage_rights = |pdf: &[u8]| {
+        let doc = Document::load_mem(pdf).unwrap();
+        let perms = doc.catalog().unwrap().get(b"Perms").ok().cloned();
+        perms.is_some_and(|p| {
+            doc.dereference(&p)
+                .unwrap()
+                .1
+                .as_dict()
+                .unwrap()
+                .has(b"UR3")
+        })
+    };
+    assert!(has_usage_rights(&pdf));
+    // Usage rights are not a signature the user needs warning about.
+    assert!(!pdf_stamp::inspect(&pdf).unwrap().digitally_signed);
+
+    let (sig, _) = sample();
+    let target = Placement {
+        image: 0,
+        page: 1,
+        x: 40.0,
+        y: 40.0,
+        width: 150.0,
+        height: 50.0,
+    };
+    let out = stamp(&pdf, &[&sig], &[target]).unwrap();
+    assert!(!has_usage_rights(&out));
+    // The form itself is kept.
+    let doc = Document::load_mem(&out).unwrap();
+    assert!(doc.catalog().unwrap().has(b"AcroForm"));
+}
+
+#[test]
+fn detects_digital_signatures() {
+    let fixture = &testpdf::fixtures()[0];
+    let pdf = testpdf::build(fixture, &fixture.target(3.0));
+    assert!(!pdf_stamp::inspect(&pdf).unwrap().digitally_signed);
+
+    let with_catalog = |key: &str, value: Object| {
+        let mut doc = Document::load_mem(&pdf).unwrap();
+        doc.catalog_mut().unwrap().set(key, value);
+        let mut out = Vec::new();
+        doc.save_to(&mut out).unwrap();
+        out
+    };
+    let sig_flags = |flags: i64| {
+        with_catalog(
+            "AcroForm",
+            lopdf::dictionary! { "Fields" => Vec::<Object>::new(), "SigFlags" => flags }.into(),
+        )
+    };
+    // Bit 1 is SignaturesExist; bit 2 alone (AppendOnly) comes with usage rights too.
+    assert!(pdf_stamp::inspect(&sig_flags(3)).unwrap().digitally_signed);
+    assert!(!pdf_stamp::inspect(&sig_flags(2)).unwrap().digitally_signed);
+    let certified = with_catalog(
+        "Perms",
+        lopdf::dictionary! { "DocMDP" => lopdf::dictionary! {} }.into(),
+    );
+    assert!(pdf_stamp::inspect(&certified).unwrap().digitally_signed);
 }

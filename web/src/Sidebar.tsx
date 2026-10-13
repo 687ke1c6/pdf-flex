@@ -70,7 +70,17 @@ export function Sidebar(props: Props) {
       </section>
 
       <section class="grow">
-        <h2>Placed ({editor.placements.length})</h2>
+        <div class="section-head">
+          <h2>Placed ({editor.placements.length})</h2>
+          <span>
+            <button class="icon" title="Undo (Ctrl Z)" aria-label="Undo" disabled={!editor.canUndo()} onClick={() => editor.undo()}>
+              ↶
+            </button>
+            <button class="icon" title="Redo (Ctrl Shift Z)" aria-label="Redo" disabled={!editor.canRedo()} onClick={() => editor.redo()}>
+              ↷
+            </button>
+          </span>
+        </div>
         <Show when={editor.placements.length} fallback={<p class="hint">Nothing placed yet.</p>}>
           <ul class="placements">
             <For each={editor.placements}>
@@ -99,7 +109,10 @@ export function Sidebar(props: Props) {
         <button class="primary block" disabled={!editor.placements.length || props.saving} onClick={() => props.onSave()}>
           {props.saving ? "Saving…" : "Download signed PDF"}
         </button>
-        <p class="hint">The original file is not changed.</p>
+        <p class="hint">
+          The original file is not changed.
+          <Show when={editor.placements.length}> Select a signature and use the arrow keys to nudge it (Shift for bigger steps).</Show>
+        </p>
       </section>
 
       <Show when={creating()}>

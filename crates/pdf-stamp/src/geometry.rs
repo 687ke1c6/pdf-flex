@@ -24,13 +24,21 @@ impl fmt::Display for Matrix {
     }
 }
 
-/// The visible area of a page and how a viewer rotates it.
+/// The page size viewers (pdf.js, poppler) assume when a page has no usable MediaBox.
+pub const LETTER: [f32; 4] = [0.0, 0.0, 612.0, 792.0];
+
+/// The visible area of a page and how a viewer rotates and scales it.
+///
+/// Mirrors how pdf.js reads these values, since the frontend measures
+/// placements against pages rendered by pdf.js.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PageGeometry {
     /// Visible area in user space, normalised to `[llx, lly, urx, ury]`.
     pub crop: [f32; 4],
     /// Clockwise display rotation: 0, 90, 180 or 270.
     pub rotate: u16,
+    /// Size of one user-space unit in points (`/UserUnit`, PDF 1.6). Usually 1.
+    pub user_unit: f32,
 }
 
 impl PageGeometry {
@@ -41,26 +49,51 @@ impl PageGeometry {
         Self {
             crop: normalise(crop),
             rotate,
+            user_unit: 1.0,
         }
     }
 
-    /// Reads MediaBox, CropBox and Rotate, following inheritance through the page tree.
-    pub fn read(doc: &Document, page_id: ObjectId) -> Option<Self> {
-        let media = inherited(doc, page_id, b"MediaBox").and_then(|o| rect(doc, o))?;
+    pub fn with_user_unit(self, user_unit: f32) -> Self {
+        let user_unit = if user_unit.is_finite() && user_unit > 0.0 {
+            user_unit
+        } else {
+            1.0
+        };
+        Self { user_unit, ..self }
+    }
+
+    /// Reads MediaBox, CropBox, Rotate and UserUnit, following inheritance through the page tree.
+    ///
+    /// Like pdf.js: a missing or empty MediaBox means US Letter, a CropBox that
+    /// doesn't overlap the MediaBox is ignored, and Rotate may be any number
+    /// that is a multiple of 90 (including reals such as `90.0`).
+    pub fn read(doc: &Document, page_id: ObjectId) -> Self {
+        let media = inherited(doc, page_id, b"MediaBox")
+            .and_then(|o| rect(doc, o))
+            .unwrap_or(LETTER);
         let crop = inherited(doc, page_id, b"CropBox")
             .and_then(|o| rect(doc, o))
             .and_then(|c| intersect(c, media))
             .unwrap_or(media);
         let rotate = inherited(doc, page_id, b"Rotate")
-            .and_then(|o| o.as_i64().ok())
-            .unwrap_or(0);
-        Some(Self::new(crop, rotate))
+            .and_then(|o| o.as_float().ok())
+            .filter(|r| r.is_finite() && r % 90.0 == 0.0)
+            .map_or(0, |r| r as i64);
+        // Not inheritable: pdf.js and the spec read it from the page itself.
+        let user_unit = doc
+            .get_dictionary(page_id)
+            .ok()
+            .and_then(|d| d.get(b"UserUnit").ok())
+            .and_then(|o| doc.dereference(o).ok())
+            .and_then(|(_, o)| o.as_float().ok())
+            .unwrap_or(1.0);
+        Self::new(crop, rotate).with_user_unit(user_unit)
     }
 
     /// Width and height of the page as a viewer shows it, in points.
     pub fn display_size(&self) -> (f32, f32) {
         let [llx, lly, urx, ury] = self.crop;
-        let (w, h) = (urx - llx, ury - lly);
+        let (w, h) = ((urx - llx) * self.user_unit, (ury - lly) * self.user_unit);
         if self.rotate % 180 == 90 {
             (h, w)
         } else {
@@ -68,15 +101,17 @@ impl PageGeometry {
         }
     }
 
-    /// Maps display space (origin bottom-left of the page as shown, y up) to user space.
+    /// Maps display space (points, origin bottom-left of the page as shown, y up) to user space.
     pub fn display_to_user(&self) -> Matrix {
         let [llx, lly, urx, ury] = self.crop;
         let (w, h) = (urx - llx, ury - lly);
+        // Scale points down to user units first, then rotate and translate.
+        let s = 1.0 / self.user_unit;
         Matrix(match self.rotate {
-            90 => [0.0, 1.0, -1.0, 0.0, llx + w, lly],
-            180 => [-1.0, 0.0, 0.0, -1.0, llx + w, lly + h],
-            270 => [0.0, -1.0, 1.0, 0.0, llx, lly + h],
-            _ => [1.0, 0.0, 0.0, 1.0, llx, lly],
+            90 => [0.0, s, -s, 0.0, llx + w, lly],
+            180 => [-s, 0.0, 0.0, -s, llx + w, lly + h],
+            270 => [0.0, -s, s, 0.0, llx, lly + h],
+            _ => [s, 0.0, 0.0, s, llx, lly],
         })
     }
 }
@@ -99,6 +134,7 @@ pub(crate) fn inherited<'a>(
     None
 }
 
+/// Reads a rectangle with a positive, finite area; anything else counts as missing.
 fn rect(doc: &Document, obj: &Object) -> Option<[f32; 4]> {
     let arr = obj.as_array().ok()?;
     if arr.len() != 4 {
@@ -108,7 +144,8 @@ fn rect(doc: &Document, obj: &Object) -> Option<[f32; 4]> {
     for (slot, item) in out.iter_mut().zip(arr) {
         *slot = doc.dereference(item).ok()?.1.as_float().ok()?;
     }
-    Some(normalise(out))
+    let r = normalise(out);
+    (r.iter().all(|v| v.is_finite()) && r[0] < r[2] && r[1] < r[3]).then_some(r)
 }
 
 fn normalise([x0, y0, x1, y1]: [f32; 4]) -> [f32; 4] {
@@ -159,6 +196,19 @@ mod tests {
     fn invalid_rotation_is_ignored() {
         assert_eq!(PageGeometry::new(CROP, 45).rotate, 0);
         assert_eq!(PageGeometry::new(CROP, 450).rotate, 90);
+    }
+
+    #[test]
+    fn user_unit_scales_display_space() {
+        let g = PageGeometry::new(CROP, 90).with_user_unit(2.0);
+        assert_eq!(g.display_size(), (1600.0, 1200.0));
+        let m = g.display_to_user();
+        assert_eq!(m.apply(0.0, 0.0), (650.0, 100.0));
+        assert_eq!(m.apply(1600.0, 1200.0), (50.0, 900.0));
+        assert_eq!(
+            PageGeometry::new(CROP, 0).with_user_unit(-1.0).user_unit,
+            1.0
+        );
     }
 
     #[test]

@@ -1,8 +1,9 @@
 // Editing state: the signature library, which signature is active, where signatures are placed, and what's selected.
-import { createContext, createSignal, useContext, type ParentProps } from "solid-js";
+import { createContext, createMemo, createSignal, useContext, type ParentProps } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
 import type { PageSize } from "./pdf";
-import { centeredAt, type Box, type Placement, type Point } from "./placement";
+import { createHistory } from "./history";
+import { centeredAt, clampToPage, moved, type Box, type Placement, type Point } from "./placement";
 import {
   exportSignatures,
   newSignatureId,
@@ -44,6 +45,24 @@ function createEditor() {
   const [selected, setSelected] = createSignal<string | null>(null);
   let pages: PageSize[] = [];
   let nextPlacementId = 0;
+
+  // Undo/redo over the placements. The version signal makes canUndo/canRedo reactive.
+  const [historyVersion, setHistoryVersion] = createSignal(0);
+  const history = createHistory<Placement[]>(() => setHistoryVersion((v) => v + 1));
+  const snapshot = () => unwrap(placements).map((p) => ({ ...p }));
+  /** Call before every change to the placements. `tag` merges a run of changes into one undo step. */
+  const checkpoint = (tag?: string) => history.checkpoint(snapshot(), tag);
+  function restore(state: Placement[] | undefined) {
+    if (!state) return;
+    // A signature may have been deleted from the library since; its placements can't come back.
+    state = state.filter((p) => library.some((s) => s.id === p.signatureId));
+    setPlacements(state);
+    if (!state.some((p) => p.id === selected())) setSelected(null);
+  }
+
+  // Unsaved changes: the placements differ from those at the last download (or open).
+  const [savedState, setSavedState] = createSignal("[]");
+  const dirty = createMemo(() => JSON.stringify(placements) !== savedState());
 
   const signature = (id: string | null | undefined) => library.find((s) => s.id === id);
   /** Store records are proxies (including nested ones like a recipe), which IndexedDB can't clone. */
@@ -114,12 +133,31 @@ function createEditor() {
       return sigs.length;
     },
 
-    /** Call when a new document is opened: clears placements made on the old one. */
+    /** Call when a new document is opened: clears placements made on the old one, and their history. */
     reset(newPages: PageSize[]) {
       pages = newPages;
       setPlacements([]);
       setSelected(null);
+      history.clear();
+      setSavedState("[]");
     },
+
+    /** Size of a page in points (1-based), if it exists. */
+    pageSize: (page: number): PageSize | undefined => pages[page - 1],
+
+    /** Whether there are placements that haven't been downloaded. */
+    dirty,
+    /** Call after the signed PDF has been downloaded. */
+    markSaved() {
+      setSavedState(JSON.stringify(placements));
+    },
+
+    canUndo: () => (historyVersion(), history.canUndo()),
+    canRedo: () => (historyVersion(), history.canRedo()),
+    undo: () => restore(history.undo(snapshot())),
+    redo: () => restore(history.redo(snapshot())),
+    /** Ends a merged change (a drag), so the next one is a separate undo step. */
+    endChange: () => history.seal(),
 
     /** Places a signature (default: the active one) centred on `center` in points, or the page centre. */
     add(page: number, center?: Point, signatureId = activeId()) {
@@ -131,6 +169,7 @@ function createEditor() {
       const width = Math.min(DEFAULT_WIDTH, size.width / 2);
       const box = centeredAt(center ?? { x: size.width / 2, y: size.height / 2 }, width, sig.width / sig.height, size);
       const id = `p${nextPlacementId++}`;
+      checkpoint();
       setPlacements(placements.length, { id, signatureId: sig.id, page, ...box });
       setSelected(id);
 
@@ -139,11 +178,36 @@ function createEditor() {
       void save(signature(sig.id)!);
     },
 
-    update(id: string, box: Box) {
-      setPlacements((p) => p.id === id, box);
+    /**
+     * Moves or resizes a placement, optionally onto another page (where it is
+     * kept within the page). Changes with the same `tag` undo as one step until
+     * `endChange` is called; drags pass one.
+     */
+    update(id: string, box: Box, page?: number, tag?: string) {
+      const current = placements.find((p) => p.id === id);
+      if (!current) return;
+      const target = page ?? current.page;
+      const size = pages[target - 1];
+      if (!size) return;
+      const next = { ...clampToPage(box, size), page: target };
+      const same = (Object.keys(next) as (keyof typeof next)[]).every((k) => next[k] === current[k]);
+      if (same) return;
+      checkpoint(tag);
+      setPlacements((p) => p.id === id, next);
+    },
+
+    /** Moves the selected placement by (dx, dy) points; a run of nudges undoes as one step. */
+    nudge(dx: number, dy: number) {
+      const current = placements.find((p) => p.id === selected());
+      const size = current && pages[current.page - 1];
+      if (!current || !size) return;
+      checkpoint(`nudge:${current.id}`);
+      setPlacements((p) => p.id === current.id, moved(current, dx, dy, size));
     },
 
     remove(id: string) {
+      if (!placements.some((p) => p.id === id)) return;
+      checkpoint();
       setPlacements((list) => list.filter((p) => p.id !== id));
       if (selected() === id) setSelected(null);
     },

@@ -2,7 +2,7 @@
 import { For, Show } from "solid-js";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
 import type { PageSize } from "./pdf";
-import { moved, resized, toCss, toPoints, type Corner, type Placement } from "./placement";
+import { resized, toCss, toPoints, type Corner, type Placement, type Point } from "./placement";
 
 interface Props {
   pageNumber: number;
@@ -12,6 +12,14 @@ interface Props {
 }
 
 const CORNERS: Corner[] = ["nw", "ne", "sw", "se"];
+
+/** The page overlay under a screen point, if any (ignoring the placement being dragged). */
+function overlayAt(clientX: number, clientY: number): HTMLElement | undefined {
+  return document
+    .elementsFromPoint(clientX, clientY)
+    .map((el) => el.closest<HTMLElement>(".page-overlay"))
+    .find((el) => el !== null) ?? undefined;
+}
 
 export function PageOverlay(props: Props) {
   const editor = useEditor();
@@ -40,6 +48,7 @@ export function PageOverlay(props: Props) {
   return (
     <div
       class="page-overlay"
+      data-page={props.pageNumber}
       onDragOver={onDragOver}
       onDrop={onDrop}
       // Clicking empty page space clears the selection.
@@ -64,38 +73,61 @@ function PlacementBox(props: BoxProps) {
   const isSelected = () => editor.selected() === props.placement.id;
   const css = () => toCss(props.placement, props.size, props.scale);
 
-  /** Tracks one pointer drag on `el`, calling `onMove` with each event until release. */
-  function track(e: PointerEvent, el: HTMLElement, onMove: (e: PointerEvent) => void) {
+  /**
+   * Tracks one pointer drag, calling `onMove` with each event until release.
+   * Listens on the window: a placement dragged onto another page is re-created
+   * there, and the element that started the drag goes away.
+   */
+  function track(e: PointerEvent, onMove: (e: PointerEvent) => void) {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    editor.select(props.placement.id);
-    el.setPointerCapture(e.pointerId);
-    const end = () => {
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", end);
-      el.removeEventListener("pointercancel", end);
+    const id = props.placement.id;
+    editor.select(id);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const end = (u: PointerEvent) => {
+      if (u.pointerId !== e.pointerId) return;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      editor.endChange();
     };
-    el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerup", end);
-    el.addEventListener("pointercancel", end);
+    const move = (m: PointerEvent) => m.pointerId === e.pointerId && onMove(m);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
   }
 
   function startMove(e: PointerEvent) {
-    const start = { x: e.clientX, y: e.clientY, box: { ...props.placement } };
-    track(e, e.currentTarget as HTMLElement, (m) => {
-      // Screen y is down, display space is up.
-      const dx = (m.clientX - start.x) / props.scale;
-      const dy = -(m.clientY - start.y) / props.scale;
-      editor.update(props.placement.id, moved(start.box, dx, dy, props.size));
+    const id = props.placement.id;
+    const layer = (e.currentTarget as HTMLElement).closest(".page-overlay")!;
+    // Where the box was grabbed, relative to its bottom-left corner, in points.
+    const grab = props.pointerOnPage(e, layer);
+    const offset: Point = { x: grab.x - props.placement.x, y: grab.y - props.placement.y };
+    const { width, height } = props.placement;
+    // Captured now: this component is disposed if the placement moves to another page.
+    const scale = props.scale;
+    let page = props.placement.page;
+    track(e, (m) => {
+      // Follow the pointer onto whichever page it's over; between pages, stay put.
+      const over = overlayAt(m.clientX, m.clientY);
+      const overPage = Number(over?.dataset.page);
+      const size = editor.pageSize(overPage);
+      if (over && size) page = overPage;
+      const target = over && size ? over : document.querySelector(`.page-overlay[data-page="${page}"]`);
+      const targetSize = editor.pageSize(page);
+      if (!target || !targetSize) return;
+      const rect = target.getBoundingClientRect();
+      const pt = toPoints(m.clientX - rect.left, m.clientY - rect.top, targetSize, scale);
+      editor.update(id, { x: pt.x - offset.x, y: pt.y - offset.y, width, height }, page, `drag:${id}`);
     });
   }
 
   function startResize(e: PointerEvent, corner: Corner) {
-    const handle = e.currentTarget as HTMLElement;
-    const layer = handle.closest(".page-overlay")!;
+    const layer = (e.currentTarget as HTMLElement).closest(".page-overlay")!;
     const start = { ...props.placement };
-    track(e, handle, (m) => editor.update(props.placement.id, resized(start, corner, props.pointerOnPage(m, layer), props.size)));
+    const id = start.id;
+    track(e, (m) => editor.update(id, resized(start, corner, props.pointerOnPage(m, layer), props.size), undefined, `resize:${id}`));
   }
 
   return (

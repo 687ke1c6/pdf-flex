@@ -3,7 +3,7 @@ import { download, signedName } from "./download";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
 import { openPdf, type LoadedPdf } from "./pdf";
 import { Sidebar } from "./Sidebar";
-import { stampPdf } from "./stamper";
+import { inspectPdf, sameLayout, stampPdf } from "./stamper";
 import { clampZoom, stepZoom } from "./zoom";
 import { Viewer, type ViewerApi } from "./Viewer";
 
@@ -28,6 +28,7 @@ export function App() {
   let fileInput!: HTMLInputElement;
 
   async function open(name: string, bytes: Uint8Array) {
+    if (editor.dirty() && !confirm("Your placed signatures haven't been downloaded. Open another PDF and discard them?")) return;
     setError("");
     setLoading(true);
     try {
@@ -35,7 +36,23 @@ export function App() {
       await file()?.pdf.close();
       setPage(1);
       editor.reset(pdf.pages);
-      setFile({ name, bytes, pdf });
+      const opened = { name, bytes, pdf };
+      setFile(opened);
+      // In the background: warn now, not at save time, if this PDF can't be signed.
+      inspectPdf(bytes).then(
+        ({ pages, digitallySigned }) => {
+          if (file() !== opened) return;
+          const warnings = [];
+          if (digitallySigned)
+            warnings.push("This PDF is digitally signed. Adding your signature will make the existing digital signature invalid.");
+          if (!sameLayout(pdf.pages, pages))
+            warnings.push("This PDF's page layout is unusual, so signatures may not land exactly where you place them. Check the downloaded file.");
+          if (warnings.length) setError(warnings.join(" "));
+        },
+        (err) => {
+          if (file() === opened) setError(`You can view this PDF, but not sign it. ${err instanceof Error ? err.message : err}`);
+        },
+      );
     } catch (err) {
       setError(`Couldn't open ${name}: ${err instanceof Error ? err.message : err}`);
     } finally {
@@ -91,6 +108,7 @@ export function App() {
         if (sig && !images.has(signatureId)) images.set(signatureId, new Uint8Array(await sig.png.arrayBuffer()));
       }
       download(await stampPdf(f.bytes, editor.placements, images), signedName(f.name));
+      editor.markSaved();
     } catch (err) {
       setError(`Couldn't save: ${err instanceof Error ? err.message : err}`);
     } finally {
@@ -99,7 +117,38 @@ export function App() {
   }
 
   function onKeyDown(e: KeyboardEvent) {
-    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement;
+    const typing =
+      e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement;
+    // Dialogs (new signature) handle their own keys.
+    if (document.querySelector("dialog[open]")) return;
+    const mod = e.ctrlKey || e.metaKey;
+
+    // Undo / redo placements. In text fields, the field's own undo applies.
+    if (mod && !typing && file()) {
+      const key = e.key.toLowerCase();
+      if (key === "z" || key === "y") {
+        e.preventDefault();
+        if (key === "y" || e.shiftKey) editor.redo();
+        else editor.undo();
+        return;
+      }
+    }
+
+    // Arrow keys nudge the selected placement: 1 pt, or 10 pt with Shift.
+    const arrows: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, 1], // display space has y up
+      ArrowDown: [0, -1],
+    };
+    if (editor.selected() && !typing && !mod && e.key in arrows) {
+      e.preventDefault();
+      const [dx, dy] = arrows[e.key];
+      const step = e.shiftKey ? 10 : 1;
+      editor.nudge(dx * step, dy * step);
+      return;
+    }
+
     // Delete / Escape act on the selected placement.
     const selected = editor.selected();
     if (selected && !typing && (e.key === "Delete" || e.key === "Backspace")) {
@@ -124,7 +173,19 @@ export function App() {
     window.addEventListener("drop", onDrop);
     window.addEventListener("drop", endDrag, { capture: true });
     window.addEventListener("keydown", onKeyDown);
+    // Arrow-key nudges in a row undo as one step; releasing the key ends the run.
+    const onKeyUp = (e: KeyboardEvent) => e.key.startsWith("Arrow") && editor.endChange();
+    window.addEventListener("keyup", onKeyUp);
+    // Closing or reloading the tab with placements not yet downloaded asks first.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!editor.dirty()) return;
+      e.preventDefault();
+      e.returnValue = ""; // older browsers need this as well
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
     onCleanup(() => {
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("dragover", onDragOver);
       window.removeEventListener("dragleave", onDragLeave);
       window.removeEventListener("drop", onDrop);

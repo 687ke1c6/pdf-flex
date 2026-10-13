@@ -65,6 +65,9 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 }
 .sidebar section.grow { flex: 1; }
 .sidebar h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 0.5rem; }
+.sidebar .section-head { display: flex; align-items: baseline; justify-content: space-between; }
+.sidebar .section-head button.icon:hover:not(:disabled) { color: inherit; }
+button.icon:disabled { opacity: 0.35; cursor: default; }
 .sidebar .hint { color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0; }
 button.block { display: block; width: 100%; margin: 0.25rem 0; }
 button.link { border: none; background: none; padding: 0; color: var(--accent); text-align: left; }

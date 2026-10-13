@@ -33,12 +33,13 @@ A web app you can install as a PWA. It opens a PDF, lets you drag your signature
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | Hosting | Local network only, on a Raspberry Pi behind the existing Tailscale reverse proxy, which terminates TLS (§9). **Deferred:** dev uses `localhost` |
+| 1 | Hosting | Local network only, on a Raspberry Pi behind the existing Tailscale reverse proxy, which terminates TLS (§9). **Deferred to chunk 10:** dev uses `localhost` |
 | 2 | Primary browser | Chrome (desktop) |
 | 3 | Encrypt the stored signature? | No. It's a prototype, so store it as plain PNG in IndexedDB |
 | 4 | Frontend framework | SolidJS |
 | 5 | Target platform | Browser-first (works on Windows and Linux). Windows-only native was considered and rejected: it doesn't remove the hard parts, and the dev container is Linux |
 | 6 | Signature sources | Import, type, and draw all produce a **transparent PNG** saved to the same IndexedDB library, so `pdf-stamp` only ever deals with PNG images (it gains support for several different images per document in chunk 5). Typed signatures use bundled open-licence script fonts (no font CDN). Drawn signatures are rasterised at high resolution; vector output is a later idea |
+| 7 | Static file server | A small **axum** server (`crates/pdf-sign-server`) in an **Alpine** container image, rather than Caddy or nginx. It keeps the whole stack in Rust, and the security headers (CSP), MIME types and cache rules live in tested code. The image is built in two stages, builder and runner, and the builder uses `just` (chunk 9) |
 
 ---
 
@@ -58,9 +59,10 @@ Work proceeds in small chunks. Each one ends with something you can run and chec
 | 4 | MVP part 1: place and save | **End-to-end:** sign a real PDF in the browser | ✅ (pending your Chrome check) |
 | 5 | Signature library | Saved signatures survive a browser restart; pick, rename, delete | ✅ (pending your Chrome check) |
 | 6 | Create signatures: type and draw | Make a signature from typed text or by drawing, and save it to the library | ✅ (pending your Chrome check) |
-| 7 | Harden the core library | `cargo test` passes against the test-file corpus | 🔜 |
-| 8 | Polish | Undo, keyboard shortcuts, unsaved-changes warning, cross-browser check | ⬜ |
-| 9 | PWA and deploy (later) | Installed from a phone or laptop via the Pi | ⬜ |
+| 7 | Harden the core library | `cargo test` passes against the test-file corpus | ✅ (pending your Chrome check) |
+| 8 | Polish | Undo, keyboard shortcuts, unsaved-changes warning, cross-browser check | ✅ (pending your browser checks) |
+| 9 | PWA, server and container image | `just image` builds an Alpine image; the container serves the app on `localhost:8080`, Chrome installs it, and it works offline | 🔜 |
+| 10 | Deploy to the Pi (later) | Installed from a phone or laptop via the Pi, over HTTPS through Tailscale | ⬜ |
 
 ### Chunk 0: Environment ✅
 - Dockerfile: `wasm32-unknown-unknown` target, `wasm-pack`, `qpdf`.
@@ -120,7 +122,7 @@ Work proceeds in small chunks. Each one ends with something you can run and chec
 - **Geometry** lives in `web/src/placement.ts`, pure functions with 13 `bun test` unit tests: screen to display-space conversion, move, resize, clamping, and the flat argument layout for WASM.
 - **Saving:** **Download signed PDF** sends the *original* bytes, the signature and the placements to a Web Worker running the WASM build, then downloads `<name>-signed.pdf`. Errors from Rust appear in the error banner.
 - **Build wiring:** `just wasm` now builds into `crates/pdf-stamp-wasm/pkg`, used by the web app (Vite alias `pdf-stamp-wasm`) and copied into the demo page by `just demo`. `just dev` and `just build` build the WASM first. `just test` runs the Rust and web tests.
-- **Not yet** (later chunks): moving a placement to a different page by dragging, undo/redo, arrow-key nudging, storing the signature between sessions, background removal.
+- **Not yet** (later chunks): moving a placement to a different page by dragging, undo/redo, arrow-key nudging (all done in chunk 8), storing the signature between sessions, background removal (chunk 5).
 - **Verified (no browser):** typecheck, unit tests, and production build pass (the WASM is emitted once, hashed, next to the worker); the dev server resolves the worker and serves the WASM as `application/wasm`.
 - **Your check:** `just dev`, open a sample or your own PDF, load a signature, place it on a few pages (including a rotated one), move and resize, then download and open the result.
 
@@ -149,24 +151,87 @@ The sidebar's **New signature…** button opens one dialog with **Type · Draw �
 - **Tests:** 3 new web tests for stroke smoothing, single-tap dots, and pressure widths (18 web tests in total).
 - **Your check:** type your name and try each font and both inks; draw a signature with the mouse (and a pen or touch screen if you have one), use Undo stroke and Clear; save both, place them, download, and zoom to 200% in a PDF viewer to check they're crisp.
 
-### Chunk 7: Harden the core library
+### Chunk 7: Harden the core library ✅
 Already done in chunk 1: multiple placements sharing one image, rotation (0/90/180/270) and CropBox handling, refusing encrypted PDFs.
-- A test-file corpus (scanner output, Word exports, forms, slightly malformed files); `qpdf --check` on every output.
-- Load untrusted PDFs with a decompression limit (`LoadOptions::max_decompressed_size`).
-- Clear, user-facing error messages for each failure case.
+- **Test corpus** (`crates/pdf-stamp/tests/corpus/`, sources in its README):
+  - **Real files:** four unmodified US government PDFs, which are public domain. They cover an IRS XFA/AcroForm form with usage rights, a Word export (Acrobat PDFMaker, tagged), a LibreOffice letter edited in macOS Preview (incremental update), and an Acrobat scan with JPEG 2000 images.
+  - **Generated files** (`just corpus`, committed): broken, missing, or shifted xref tables; junk before the header; truncation; unbalanced `q`/`Q`; missing MediaBox; `/UserUnit`; real-number `/Rotate`; missing, dangling, or array `/Contents`; shared indirect resources; a deep page tree; PDF 2.0; object streams + linearization; owner-only, user-password, and RC4 encryption; a decompression bomb; and non-PDFs.
+- **Corpus test** (`tests/corpus.rs`): every file has a stated expectation. For files that should sign, every page gets a stamp, and then:
+  - the output reloads with the same pages, geometry, and catalog entries;
+  - `qpdf --check` passes with no warnings;
+  - rendered with poppler, the stamp is exactly where it was placed and no other pixel changed.
+  qpdf and poppler are optional; their checks are skipped with a warning if missing. `poppler-utils` was added to the Dockerfile.
+- **pdf.js cross-check** (`crates/pdf-stamp-wasm/corpus.ts`, part of `just wasm-smoke`): pdf.js and the WASM build agree on every corpus file's page count and sizes. The app places signatures with pdf.js sizes and stamps with WASM, so a disagreement would misplace signatures.
+- **Bugs the corpus found, now fixed:**
+  - Geometry now matches pdf.js: `/UserUnit` scales the page, a missing or empty MediaBox means US Letter, and `/Rotate 90.0` counts. Before, signatures on such pages landed in the wrong place, or stamping failed.
+  - **Broken xref tables:** lopdf rebuilds the table only when it can't parse it. It gave up when the offsets were wrong or the trailer was missing. A small repair step (`repair.rs`) now scans for objects, finds the catalog, and appends a fresh table, as viewers do.
+  - **Unbalanced content:** a `Q` with no matching `q` made poppler blank the whole page, so the stamp vanished. Unclosed `q`s would have leaked their transform onto the stamp. Both are balanced now.
+  - A dangling `/Contents` reference produced a qpdf warning; it now counts as an empty page.
+- **Limits:** untrusted PDFs load with a 64 MB per-stream decompression limit. Signature images are refused above 10,000 px per side, based on the header alone. NaN, infinite, or non-positive placement sizes are refused.
+- **User-facing errors:** each failure case has a plain-sentence message, shown as is in the app, for example "This PDF is password-protected or has security restrictions, so it can't be signed here."
+- **Early warnings in the app:** on opening a PDF, the worker runs `inspect`, which uses the same loading as stamping. The banner then says straight away if the PDF can't be signed, if it is **digitally signed** (stamping rewrites the file, invalidating the signature), or if pdf.js and the stamper disagree on its pages.
+- **Reader usage rights** (`/Perms /UR3`, as on IRS forms) are removed when stamping. Otherwise Acrobat Reader warns that the document "has been changed since it was created" and disables features.
+- **Tests:** 9 unit, 13 stamping, and 2 corpus tests in Rust; 20 web tests. The WASM build is 1000 KB, up from 973 KB.
+- **Known limits** (see §11): any existing digital signature is invalidated; PDFs with only an owner password are refused even though they open without one; a file opening in pdf.js but not lopdf is reported as damaged.
+- **Your check:** open the corpus outputs in `target/tmp/corpus/` in Chrome and Acrobat Reader. Check especially the IRS form, which should show no "document has been changed" warning, and `generated--user-unit-2.pdf`. Then, in the app, open `generated/encrypted-owner-password-only.pdf` and see the warning appear on open.
 
-### Chunk 8: Polish
-- Undo/redo; arrow-key nudging.
-- Drag a placement from one page to another.
-- Unsaved-changes warning (`beforeunload`).
-- Spot-check Edge, Firefox, and Safari (including touch drawing and drag on iOS).
+### Chunk 8: Polish ✅
+- **Undo/redo** (`history.ts`, snapshot-based, 200 steps): placing, moving, resizing, nudging and removing. Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z or Ctrl+Y redoes. There are also ↶ ↷ buttons in the sidebar.
+  - A whole drag or resize is one step, and so is a run of arrow-key nudges until the key is released. A click without movement records nothing.
+  - In text fields, the browser's own undo applies. Placements whose signature has since been deleted from the library don't come back.
+- **Arrow keys** nudge the selected placement by 1 pt, or 10 pt with Shift.
+- **Moving between pages:** while dragging, the placement follows the pointer onto whichever page it's over, keeping the point where it was grabbed. Between pages it stays on the last one. Drags now listen on the window, because the box is re-created on its new page mid-drag.
+- **Unsaved changes:** the placements are compared with those at the last download.
+  - Closing or reloading the tab asks first (`beforeunload`).
+  - So does opening another PDF.
+  - Undoing back to the downloaded state counts as saved.
+- **Tests:** 4 new history tests (24 web tests in total). Typecheck and build pass. The interactions themselves were not run in a browser here.
+- **Your checks:**
+  - **Chrome:** drag a signature from one page to the next, including at 50% zoom with several pages visible. Undo and redo a drag, a resize, a nudge run, and a delete. Close the tab with unsaved placements, then do the same after downloading.
+  - **Spot-check** Edge, Firefox and Safari. On iOS, check touch drawing and dragging a placement, including across pages.
 
-### Chunk 9: PWA and deploy (later)
-- Manifest, icons, and a service worker (`vite-plugin-pwa`) for offline use.
-- Strict CSP; confirm in DevTools that opening and saving make zero network requests.
-- `just deploy`: build, then rsync `web/dist/` to the Pi.
-- Serve from the Pi behind the Tailscale reverse proxy (§9).
-- Include third-party licence notices in the build: the OFL licence for the bundled fonts (required when redistributing them) and pdf.js's Apache-2.0 licence.
+### Chunk 9: PWA, server and container image
+**PWA**
+- Manifest (name, colours, `display: standalone`) and icons: 192 and 512 px, plus a maskable icon and an Apple touch icon.
+- A service worker from `vite-plugin-pwa` (Workbox `generateSW`):
+  - **Precache the app shell:** HTML, JS, CSS, the WASM, and the signature fonts, so the app works offline after the first visit.
+  - **Cache pdf.js runtime data on first use** (CMaps, standard fonts, decoders), since precaching all of it would be several MB.
+- **Updates:** a new version waits until the user chooses to reload ("Update available · Reload"). It never reloads under someone mid-signing.
+- **Strict CSP**, sent by the server: `default-src 'self'`, `connect-src 'self'`, `worker-src 'self' blob:`, `img-src 'self' blob: data:`, `object-src 'none'`, `frame-ancestors 'none'`. Plus `script-src 'self' 'wasm-unsafe-eval'`, which WebAssembly needs. Confirm in DevTools that pdf.js and the WASM run with no CSP violations, and that opening and saving make **zero network requests**.
+- **Licence notices** in the build: the OFL text for the bundled fonts (required when redistributing them), plus the licences for pdf.js (Apache-2.0) and the Rust crates. An "About" link in the app shows them along with "nothing leaves your device".
+- PWA install needs a secure context. `localhost` counts, so everything in this chunk can be tested locally.
+
+**Server: `crates/pdf-sign-server` (axum + tower-http)**
+- Serves the built `web/dist/` from a directory (`--dir`, default `/srv/www`). Configured by flags or environment variables: listen address and port (default `0.0.0.0:8080`).
+- **Headers:**
+  - The CSP above, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and a restrictive `Permissions-Policy`.
+  - `application/wasm` and `application/manifest+json` MIME types.
+- **Caching:**
+  - Hashed assets (`/assets/*`): `max-age=31536000, immutable`.
+  - `index.html`, `sw.js` and the manifest: `no-cache`, so updates are always noticed.
+- **Compression:** gzip and brotli, served from files precompressed at build time where present, otherwise compressed on the fly.
+- `GET /healthz` for the container health check. Graceful shutdown on SIGTERM. Logs requests (method, path, status) but never bodies, and there are no upload routes at all.
+- **Tests:** in-process tests (tower `oneshot`) covering headers, MIME types, cache rules, 404s, and that path traversal is refused.
+
+**Container image**
+- A two-stage `Dockerfile` at the repo root, both stages on **Alpine** (versions pinned):
+  - **Builder:** Rust (musl) plus the `wasm32` target, `wasm-pack`, `binaryen` (wasm-pack can't download `wasm-opt` for musl), Bun (musl build), and `just`. It runs `just build` for the web app and WASM, then `cargo build --release -p pdf-sign-server`. Dependency layers are cached so code-only changes rebuild quickly.
+  - **Runner:** plain `alpine` with a non-root user, holding only the static server binary and `web/dist/`. `EXPOSE 8080` and a `HEALTHCHECK` on `/healthz`. The target size is under 20 MB.
+- `.dockerignore`: `target/`, `node_modules/`, `out/`, `.git/`.
+- Nothing x86-specific, so chunk 10 can build `linux/arm64` with `docker buildx`.
+- **Recipes:**
+  - `just serve` runs the server natively against `web/dist`.
+  - `just image` builds `pdf-sign:latest`.
+  - `just image-run` starts it on `localhost:8080`.
+- **Dev container:** add the `docker-outside-of-docker` feature so `just image` works inside it (requires a container rebuild).
+- **Done when:** `just image && just image-run` serves the app on `localhost:8080`. Chrome offers to install it. With the server stopped, the installed app still opens, views and signs a PDF. The DevTools network tab shows no requests while opening or saving, and the console shows no CSP violations.
+
+### Chunk 10: Deploy to the Pi (later)
+- Build a `linux/arm64` image (`docker buildx`, from the devcontainer or CI), and push it to a registry or copy it with `docker save | ssh pi docker load`.
+- `deploy/docker-compose.yml` on the Pi runs the image (`restart: unless-stopped`) on a LAN port.
+- Put it behind the existing **Tailscale reverse proxy**, which terminates TLS, so the app is a secure context and can be installed and used offline from phones and laptops.
+- `just deploy`: build, ship, and restart on the Pi.
+- **Your check:** install it from a phone and a laptop over the tailnet, then sign a PDF offline.
 
 ---
 
@@ -262,7 +327,8 @@ Each ends up as a transparent PNG stored in **IndexedDB** (the signature library
 └────────────────────────────────────────────────────────────────────────────────────┘
         ▲ static files only (HTML, JS, WASM, manifest) over HTTPS (via proxy)
 ┌───────┴────────────────────────┐
-│ Raspberry Pi: static server    │   no backend, no uploads
+│ Raspberry Pi: axum static      │   no backend, no uploads
+│ server (Alpine container)      │
 │ behind Tailscale reverse proxy │
 └────────────────────────────────┘
 ```
@@ -286,7 +352,9 @@ pdf-sign/
 │  ├─ pdf-stamp/             # pure Rust library, no WASM/JS deps
 │  │  ├─ src/lib.rs          #   fn stamp(pdf: &[u8], sig: &RgbaImage, placements) -> Result<Vec<u8>>
 │  │  └─ tests/fixtures/     #   rotated, cropped, encrypted, malformed PDFs
-│  └─ pdf-stamp-wasm/        # thin wasm-bindgen wrapper around pdf-stamp
+│  ├─ pdf-stamp-wasm/        # thin wasm-bindgen wrapper around pdf-stamp
+│  └─ pdf-sign-server/       # axum static server for web/dist (chunk 9)
+├─ Dockerfile                # Alpine builder + runner (chunk 9)
 └─ web/                      # Vite + TS + pdf.js + PWA manifest/service worker
    ├─ src/
    │  ├─ worker.ts           # loads the WASM, handles stamp requests
@@ -386,24 +454,20 @@ Done in chunk 0. The Dockerfile installs:
 
 ## 9. Hosting on the Raspberry Pi
 
-**Deferred until chunk 7.** Development uses `localhost`, which browsers already treat as secure, so service workers work there and the app can even be installed from it.
+**Deferred until chunk 10** (the server and image come in chunk 9). Development uses `localhost`, which browsers already treat as secure, so service workers work there and the app can even be installed from it.
 
-The app is just static files, so the Pi doesn't build anything and doesn't need Rust. Build in the devcontainer, then copy `web/dist/` across.
+The app is just static files, so the Pi doesn't build anything and doesn't need Rust. It runs the chunk 9 container image (axum static server on Alpine), built for `linux/arm64`.
 
-**The plan:** a small static file server on the Pi, serving plain HTTP on the LAN, behind the **existing Tailscale reverse proxy**, which terminates TLS. That covers the HTTPS requirement for PWAs (§7.8) with no new certificate work.
+**The plan:** the container serves plain HTTP on the LAN, behind the **existing Tailscale reverse proxy**, which terminates TLS. That covers the HTTPS requirement for PWAs (§7.8) with no new certificate work. The CSP and other headers come from the server itself, so the proxy needs no special config.
 
 ```yaml
 # deploy/docker-compose.yml (on the Pi): sketch
 services:
   web:
-    image: caddy:2-alpine        # multi-arch, includes arm64
+    image: pdf-sign:latest       # linux/arm64 build of the chunk 9 image
     restart: unless-stopped
-    ports: ["8080:80"]
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro   # file_server, CSP headers, .wasm MIME
-      - ./dist:/srv:ro
+    ports: ["8080:8080"]
 ```
-Any static server works (nginx, or a tiny Rust one). Caddy is suggested because it sets the CSP headers (§7.6) and the `.wasm` MIME type (`application/wasm`) with a few lines of config.
 
 ---
 
@@ -433,3 +497,5 @@ What it costs:
 - Merge, split, or reorder pages.
 - Chromium extras: File System Access API (`showSaveFilePicker`) to save over the original file, and `file_handlers` for "Open with".
 - CLI front end on top of `pdf-stamp`.
+- **Incremental save** (lopdf's `IncrementalDocument`): append the stamp as an update instead of rewriting the file. Existing digital signatures would then stay valid for the revision they signed, and unknown or damaged objects would be kept byte for byte. It can't be used for files that needed xref repair.
+- Sign PDFs that have only an owner password (permission restrictions), by decrypting and saving without encryption. Decide first whether that's acceptable.
