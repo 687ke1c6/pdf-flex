@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1.7
-# pdf-sign: the web app (with the Rust stamper compiled to WebAssembly) served
+# pdf-flex: the web app (with the Rust stamper compiled to WebAssembly) served
 # by the axum static server, on plain Alpine.
 #
-#   just image       # docker build -t pdf-sign:latest .
+#   just image       # docker build -t pdf-flex:latest .
 #   just image-run   # serves http://localhost:8080
 #
 # Stages (BuildKit builds `wasm` and `server` in parallel):
 #
 #   wasm   ── Rust → WebAssembly stamper (pkg/) ── web ── web/dist ──┐
-#   server ── Rust → pdf-sign-server binary ─────────────────────────┴── runner
+#   server ── Rust → pdf-flex-server binary ─────────────────────────┴── runner
 #
 # Nothing here is x86-specific, so `docker buildx build --platform linux/arm64`
 # works too (chunk 10: the Raspberry Pi).
@@ -55,8 +55,8 @@ RUN wasm-pack build crates/pdf-stamp-wasm --target web --release --no-pack \
 # ---------------------------------------------------------------------------
 # The static file server: native code only, no wasm32 target needed.
 FROM rust AS server
-RUN cargo build --release --locked -p pdf-sign-server \
-    && cp target/release/pdf-sign-server /usr/local/bin/pdf-sign-server
+RUN cargo build --release --locked -p pdf-flex-server \
+    && cp target/release/pdf-flex-server /usr/local/bin/pdf-flex-server
 
 # ---------------------------------------------------------------------------
 # The web app: the same commands as `just build` after its WASM step.
@@ -73,14 +73,14 @@ RUN bun run build
 # ---------------------------------------------------------------------------
 FROM alpine:${ALPINE_VERSION} AS runner
 
-RUN addgroup -S pdfsign && adduser -S -G pdfsign -H pdfsign
-COPY --from=server /usr/local/bin/pdf-sign-server /usr/local/bin/pdf-sign-server
+RUN addgroup -S pdfflex && adduser -S -G pdfflex -H pdfflex
+COPY --from=server /usr/local/bin/pdf-flex-server /usr/local/bin/pdf-flex-server
 COPY --from=web /src/web/dist /srv/www
 
-USER pdfsign
-ENV PDF_SIGN_ADDR=0.0.0.0:8080 \
-    PDF_SIGN_DIR=/srv/www
+USER pdfflex
+ENV PDF_FLEX_ADDR=0.0.0.0:8080 \
+    PDF_FLEX_DIR=/srv/www
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
     CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
-CMD ["pdf-sign-server"]
+CMD ["pdf-flex-server"]

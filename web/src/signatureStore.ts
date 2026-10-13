@@ -22,7 +22,7 @@ export interface StoredSignature {
   recipe?: SignatureRecipe;
 }
 
-const DB_NAME = "pdf-sign";
+const DB_NAME = "pdf-flex";
 const DB_VERSION = 1;
 const STORE = "signatures";
 
@@ -71,7 +71,9 @@ export async function requestPersistence() {
 
 // --- Export / import as a file ---
 
-const EXPORT_FORMAT = "pdf-sign-signatures";
+const EXPORT_FORMAT = "pdf-flex-signatures";
+/** Written before the app was renamed from pdf-sign; still accepted on import. */
+const LEGACY_EXPORT_FORMAT = "pdf-sign-signatures";
 
 interface ExportFile {
   format: typeof EXPORT_FORMAT;
@@ -107,9 +109,9 @@ export async function exportSignatures(signatures: StoredSignature[]): Promise<s
 
 /** Parses an export file into new signatures (fresh ids). Throws on anything that isn't one. */
 export function parseSignatureExport(text: string): StoredSignature[] {
-  const file = JSON.parse(text) as Partial<ExportFile>;
-  if (file.format !== EXPORT_FORMAT || file.version !== 1 || !Array.isArray(file.signatures)) {
-    throw new Error("This isn't a pdf-sign signatures file.");
+  const file = JSON.parse(text) as Partial<Omit<ExportFile, "format">> & { format?: string };
+  if ((file.format !== EXPORT_FORMAT && file.format !== LEGACY_EXPORT_FORMAT) || file.version !== 1 || !Array.isArray(file.signatures)) {
+    throw new Error("This isn't a pdf-flex signatures file.");
   }
   return file.signatures.map((s) => ({
     ...s,

@@ -49,7 +49,7 @@ fn stamps_every_fixture() {
             .unwrap()
             .as_dict()
             .unwrap()
-            .get(b"PdfSign0")
+            .get(b"PdfFlex0")
             .unwrap();
         let image = doc
             .get_object(image_id.as_reference().unwrap())
@@ -162,7 +162,7 @@ fn different_images_on_one_page_get_separate_resources() {
         .unwrap()
         .as_dict()
         .unwrap();
-    assert!(xobjects.has(b"PdfSign0") && xobjects.has(b"PdfSign1"));
+    assert!(xobjects.has(b"PdfFlex0") && xobjects.has(b"PdfFlex1"));
     assert_eq!(
         image_count(&doc),
         3,
@@ -300,7 +300,7 @@ fn shared_resources_are_copied_not_edited() {
         .as_reference()
         .unwrap();
     let xobjects = doc.get_dictionary(xobjects).unwrap();
-    assert!(xobjects.has(b"Fm0") && !xobjects.has(b"PdfSign0"));
+    assert!(xobjects.has(b"Fm0") && !xobjects.has(b"PdfFlex0"));
     // Page 1 has its own copy with both the original form and the signature.
     let own = resources(1);
     let own = own
@@ -310,7 +310,7 @@ fn shared_resources_are_copied_not_edited() {
         .unwrap()
         .as_dict()
         .unwrap();
-    assert!(own.has(b"Fm0") && own.has(b"PdfSign0"));
+    assert!(own.has(b"Fm0") && own.has(b"PdfFlex0"));
 }
 
 #[test]

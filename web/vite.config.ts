@@ -138,7 +138,7 @@ function licenses(): Plugin {
       for (const { label, text } of entries) byText.set(text, [...(byText.get(text) ?? []), label]);
       const rule = "=".repeat(72);
       const out = [
-        "pdf-sign includes the following third-party software:\n",
+        "pdf-flex includes the following third-party software:\n",
         ...entries.map((e) => `  ${e.label}`),
         "\nTheir licence texts follow, each once with the packages it covers.\n",
         ...[...byText].map(([text, labels]) => `${rule}\n${labels.join("\n")}\n${rule}\n\n${text}\n`),
@@ -159,8 +159,8 @@ export default defineConfig({
       registerType: "prompt",
       includeAssets: ["icon.svg", "apple-touch-icon.png"],
       manifest: {
-        name: "pdf-sign",
-        short_name: "pdf-sign",
+        name: "pdf-flex",
+        short_name: "pdf-flex",
         description: "Sign PDFs in your browser. Nothing leaves your device.",
         start_url: ".",
         scope: ".",

@@ -1,4 +1,4 @@
-//! Serves the built pdf-sign web app (`web/dist/`).
+//! Serves the built pdf-flex web app (`web/dist/`).
 //!
 //! The app needs no backend: PDFs and signatures never leave the browser.
 //! This server only hands out static files, adding:

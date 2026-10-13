@@ -1,4 +1,4 @@
-# pdf-sign — Plan
+# pdf-flex — Plan
 
 A web app you can install as a PWA. It opens a PDF, lets you drag your signature onto a page, move and resize it, and save the result as a new PDF.
 
@@ -39,7 +39,7 @@ A web app you can install as a PWA. It opens a PDF, lets you drag your signature
 | 4 | Frontend framework | SolidJS |
 | 5 | Target platform | Browser-first (works on Windows and Linux). Windows-only native was considered and rejected: it doesn't remove the hard parts, and the dev container is Linux |
 | 6 | Signature sources | Import, type, and draw all produce a **transparent PNG** saved to the same IndexedDB library, so `pdf-stamp` only ever deals with PNG images (it gains support for several different images per document in chunk 5). Typed signatures use bundled open-licence script fonts (no font CDN). Drawn signatures are rasterised at high resolution; vector output is a later idea |
-| 7 | Static file server | A small **axum** server (`crates/pdf-sign-server`) in an **Alpine** container image, rather than Caddy or nginx. It keeps the whole stack in Rust, and the security headers (CSP), MIME types and cache rules live in tested code. The image is built in two stages, builder and runner, and the builder uses `just` (chunk 9) |
+| 7 | Static file server | A small **axum** server (`crates/pdf-flex-server`) in an **Alpine** container image, rather than Caddy or nginx. It keeps the whole stack in Rust, and the security headers (CSP), MIME types and cache rules live in tested code. The image is built in two stages, builder and runner, and the builder uses `just` (chunk 9) |
 
 ---
 
@@ -127,7 +127,7 @@ Work proceeds in small chunks. Each one ends with something you can run and chec
 - **Your check:** `just dev`, open a sample or your own PDF, load a signature, place it on a few pages (including a rotated one), move and resize, then download and open the result.
 
 ### Chunk 5: Signature library ✅
-- **IndexedDB store** (`web/src/signatureStore.ts`, hand-written, no dependency): database `pdf-sign`, store `signatures`, records `{ id, name, source: "import" | "typed" | "drawn", png: Blob, width, height, createdAt, lastUsedAt }`. Loaded at startup, most recently used first.
+- **IndexedDB store** (`web/src/signatureStore.ts`, hand-written, no dependency): database `pdf-flex`, store `signatures`, records `{ id, name, source: "import" | "typed" | "drawn", png: Blob, width, height, createdAt, lastUsedAt }`. Loaded at startup, most recently used first.
 - **Sidebar library:** thumbnails on a checkerboard. Click one to make it active (used by **Place on page N**); drag any of them onto a page. Rename inline (Enter saves, Escape cancels). Delete is disabled while that signature is placed in the open document.
 - **Import dialog:** choose or drop a PNG/JPEG, see a live preview, toggle **Remove background** and adjust the threshold slider, name it, **Save to library**. Done on a canvas in the browser (`signatureImage.ts`): pixels lighter than the threshold fade to transparent over a soft edge, ink keeps its colour, the result is trimmed to the ink with a small margin, and the longest side is capped at 1600 px. Background removal is off by default for images that are already transparent.
 - **Several signatures in one document:** each placement records its signature. `pdf-stamp::stamp` now takes a list of images, and each `Placement` has an `image` index. Only images actually used are embedded, each once; a page with two different signatures gets two XObject resources. The WASM API takes the images as one concatenated buffer plus a list of lengths, and placements as `[image, page, x, y, width, height]` groups.
@@ -197,8 +197,8 @@ Already done in chunk 1: multiple placements sharing one image, rotation (0/90/1
   - **Icons:** `web/public/icon.svg`, rendered to 192 px, 512 px (also used as the maskable icon) and a 180 px Apple touch icon.
   - **Update prompt:** "A new version is available · Reload · Later" (`web/src/pwa.tsx`). No service worker runs in dev.
 - **About** (toolbar): the privacy statement and a link to `licenses.txt`. The file is generated at build time from the runtime npm packages (including the fonts' OFL text) and the Rust crates compiled into the WASM (via `cargo metadata`). Each package is listed once, and each distinct licence text appears once.
-- **Server** (`crates/pdf-sign-server`): axum 0.8.9, tower-http 0.7.1, and tokio 1.53.1 (1.53.2 was too new).
-  - Configured with `--addr` and `--dir`, or `PDF_SIGN_ADDR` and `PDF_SIGN_DIR`. It refuses to start without an `index.html`.
+- **Server** (`crates/pdf-flex-server`): axum 0.8.9, tower-http 0.7.1, and tokio 1.53.1 (1.53.2 was too new).
+  - Configured with `--addr` and `--dir`, or `PDF_FLEX_ADDR` and `PDF_FLEX_DIR`. It refuses to start without an `index.html`.
   - Logs one line per request. Shuts down gracefully on SIGTERM.
   - The release binary is 2.7 MB.
   - **CSP:** `style-src` also allows `'unsafe-inline'`, because the UI and pdf.js set element styles. `script-src` is `'self' 'wasm-unsafe-eval'` with no `'unsafe-eval'`. pdf.js 6 doesn't use eval at all.
@@ -207,7 +207,7 @@ Already done in chunk 1: multiple placements sharing one image, rotation (0/90/1
   - **`wasm`** (`rust:${RUST_VERSION}-alpine${ALPINE_VERSION}`): adds the wasm32 target and runs `wasm-pack build` plus `licenses.sh`, the same commands as `just wasm`.
     - Adding the target retries up to five times. Its download from static.rust-lang.org was seen failing mid-transfer with an HTTP/2 stream error, from the dev container too, so it isn't Docker-specific.
     - `wasm-pack` 0.15.0 and the `wasm-bindgen-cli` version from `Cargo.lock` are installed with cargo, and `wasm-opt` comes from Alpine's `binaryen`. wasm-pack's own downloads are glibc builds.
-  - **`server`** (same Rust base): builds `pdf-sign-server`. It needs no wasm32 target.
+  - **`server`** (same Rust base): builds `pdf-flex-server`. It needs no wasm32 target.
   - **`web`** (`oven/bun:${BUN_VERSION}-alpine`): runs `bun install` and `bun run build` (typecheck, then Vite), using the WASM package from the `wasm` stage. TypeScript 7's compiler is a static binary, and Vite's native parts ship musl builds, so both run on Alpine.
   - **`runner`** (`alpine:${ALPINE_VERSION}`, non-root): only the server binary and `web/dist`.
   - Cache mounts keep the cargo registry, each Rust stage's `target/`, and Bun's cache between builds.
@@ -235,7 +235,7 @@ Already done in chunk 1: multiple placements sharing one image, rotation (0/90/1
 - **Licence notices** in the build: the OFL text for the bundled fonts (required when redistributing them), plus the licences for pdf.js (Apache-2.0) and the Rust crates. An "About" link in the app shows them along with "nothing leaves your device".
 - PWA install needs a secure context. `localhost` counts, so everything in this chunk can be tested locally.
 
-**Server: `crates/pdf-sign-server` (axum + tower-http)**
+**Server: `crates/pdf-flex-server` (axum + tower-http)**
 - Serves the built `web/dist/` from a directory (`--dir`, default `/srv/www`). Configured by flags or environment variables: listen address and port (default `0.0.0.0:8080`).
 - **Headers:**
   - The CSP above, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and a restrictive `Permissions-Policy`.
@@ -249,13 +249,13 @@ Already done in chunk 1: multiple placements sharing one image, rotation (0/90/1
 
 **Container image**
 - A two-stage `Dockerfile` at the repo root, both stages on **Alpine** (versions pinned):
-  - **Builder:** Rust (musl) plus the `wasm32` target, `wasm-pack`, `binaryen` (wasm-pack can't download `wasm-opt` for musl), Bun (musl build), and `just`. It runs `just build` for the web app and WASM, then `cargo build --release -p pdf-sign-server`. Dependency layers are cached so code-only changes rebuild quickly.
+  - **Builder:** Rust (musl) plus the `wasm32` target, `wasm-pack`, `binaryen` (wasm-pack can't download `wasm-opt` for musl), Bun (musl build), and `just`. It runs `just build` for the web app and WASM, then `cargo build --release -p pdf-flex-server`. Dependency layers are cached so code-only changes rebuild quickly.
   - **Runner:** plain `alpine` with a non-root user, holding only the static server binary and `web/dist/`. `EXPOSE 8080` and a `HEALTHCHECK` on `/healthz`. The target size is under 20 MB.
 - `.dockerignore`: `target/`, `node_modules/`, `out/`, `.git/`.
 - Nothing x86-specific, so chunk 10 can build `linux/arm64` with `docker buildx`.
 - **Recipes:**
   - `just serve` runs the server natively against `web/dist`.
-  - `just image` builds `pdf-sign:latest`.
+  - `just image` builds `pdf-flex:latest`.
   - `just image-run` starts it on `localhost:8080`.
 - **Dev container:** add the `docker-outside-of-docker` feature so `just image` works inside it (requires a container rebuild).
 - **Done when:** `just image && just image-run` serves the app on `localhost:8080`. Chrome offers to install it. With the server stopped, the installed app still opens, views and signs a PDF. The DevTools network tab shows no requests while opening or saving, and the console shows no CSP violations.
@@ -313,7 +313,7 @@ pdfjs.getDocument({ data: bytes.slice() });             // render (pdf.js takes 
 
 Nothing is written to disk and no network request is made. Closing the tab discards the data.
 
-*Later, Chromium only:* the PWA manifest's `file_handlers` entry plus `launchQueue` can make "Open with → pdf-sign" work from the OS file manager.
+*Later, Chromium only:* the PWA manifest's `file_handlers` entry plus `launchQueue` can make "Open with → pdf-flex" work from the OS file manager.
 
 ### Saving the signed PDF
 ```ts
@@ -378,7 +378,7 @@ Each ends up as a transparent PNG stored in **IndexedDB** (the signature library
 
 ### Proposed repo layout
 ```
-pdf-sign/
+pdf-flex/
 ├─ PLAN.md
 ├─ Cargo.toml                # workspace
 ├─ justfile                  # just dev / just build / just test
@@ -387,7 +387,7 @@ pdf-sign/
 │  │  ├─ src/lib.rs          #   fn stamp(pdf: &[u8], sig: &RgbaImage, placements) -> Result<Vec<u8>>
 │  │  └─ tests/fixtures/     #   rotated, cropped, encrypted, malformed PDFs
 │  ├─ pdf-stamp-wasm/        # thin wasm-bindgen wrapper around pdf-stamp
-│  └─ pdf-sign-server/       # axum static server for web/dist (chunk 9)
+│  └─ pdf-flex-server/       # axum static server for web/dist (chunk 9)
 ├─ Dockerfile                # Alpine builder + runner (chunk 9)
 └─ web/                      # Vite + TS + pdf.js + PWA manifest/service worker
    ├─ src/
@@ -498,7 +498,7 @@ The app is just static files, so the Pi doesn't build anything and doesn't need 
 # deploy/docker-compose.yml (on the Pi): sketch
 services:
   web:
-    image: pdf-sign:latest       # linux/arm64 build of the chunk 9 image
+    image: pdf-flex:latest       # linux/arm64 build of the chunk 9 image
     restart: unless-stopped
     ports: ["8080:8080"]
 ```

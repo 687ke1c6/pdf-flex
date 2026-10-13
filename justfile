@@ -65,12 +65,12 @@ build: wasm
 
 # Serve the built app with the production server on http://localhost:8080
 serve: build
-    cargo run -q --release -p pdf-sign-server -- --dir web/dist --addr 0.0.0.0:8080
+    cargo run -q --release -p pdf-flex-server -- --dir web/dist --addr 0.0.0.0:8080
 
-# Build the container image pdf-sign:latest (Alpine builder + runner; see Dockerfile)
+# Build the container image pdf-flex:latest (Alpine builder + runner; see Dockerfile)
 image:
-    docker build -t pdf-sign:latest .
+    docker build -t pdf-flex:latest .
 
 # Run the container image on http://localhost:8080 (Ctrl+C to stop)
 image-run:
-    docker run --rm --init -p 8080:8080 --name pdf-sign pdf-sign:latest
+    docker run --rm --init -p 8080:8080 --name pdf-flex pdf-flex:latest

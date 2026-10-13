@@ -18,7 +18,7 @@ export function Sidebar(props: Props) {
 
   async function exportLibrary() {
     const json = await editor.exportLibrary();
-    download(new TextEncoder().encode(json), "pdf-sign-signatures.json", "application/json");
+    download(new TextEncoder().encode(json), "pdf-flex-signatures.json", "application/json");
   }
 
   async function importLibrary(file: File) {

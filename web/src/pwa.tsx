@@ -32,7 +32,7 @@ export function AboutDialog(props: { onClose(): void }) {
   onMount(() => dialog.showModal());
   return (
     <dialog ref={dialog} class="dialog" onClose={() => props.onClose()}>
-      <h2>About pdf-sign</h2>
+      <h2>About pdf-flex</h2>
       <p>
         Sign PDFs in your browser. Your PDFs and signatures stay on this device: opening, signing and saving all happen
         here, and nothing is uploaded. Once loaded, the app also works offline and can be installed.

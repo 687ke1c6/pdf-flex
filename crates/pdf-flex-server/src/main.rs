@@ -1,13 +1,13 @@
-//! pdf-sign-server: serves the built web app.
+//! pdf-flex-server: serves the built web app.
 //!
-//! Usage: pdf-sign-server [--addr HOST:PORT] [--dir PATH]
-//! Defaults come from PDF_SIGN_ADDR / PDF_SIGN_DIR, then 0.0.0.0:8080 and /srv/www.
+//! Usage: pdf-flex-server [--addr HOST:PORT] [--dir PATH]
+//! Defaults come from PDF_FLEX_ADDR / PDF_FLEX_DIR, then 0.0.0.0:8080 and /srv/www.
 
 use std::{env, net::SocketAddr, path::PathBuf, process};
 
 use tokio::net::TcpListener;
 
-const USAGE: &str = "usage: pdf-sign-server [--addr HOST:PORT] [--dir PATH]";
+const USAGE: &str = "usage: pdf-flex-server [--addr HOST:PORT] [--dir PATH]";
 
 #[tokio::main]
 async fn main() {
@@ -34,7 +34,7 @@ async fn main() {
         }
     };
     println!("serving {} on http://{addr}", dir.display());
-    if let Err(e) = axum::serve(listener, pdf_sign_server::app(dir))
+    if let Err(e) = axum::serve(listener, pdf_flex_server::app(dir))
         .with_graceful_shutdown(shutdown())
         .await
     {
@@ -44,8 +44,8 @@ async fn main() {
 }
 
 fn config() -> Result<(SocketAddr, PathBuf), String> {
-    let mut addr = env::var("PDF_SIGN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
-    let mut dir = env::var("PDF_SIGN_DIR").unwrap_or_else(|_| "/srv/www".into());
+    let mut addr = env::var("PDF_FLEX_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let mut dir = env::var("PDF_FLEX_DIR").unwrap_or_else(|_| "/srv/www".into());
     let mut args = env::args().skip(1);
     while let Some(flag) = args.next() {
         let value = args.next().ok_or(format!("{flag} needs a value"))?;

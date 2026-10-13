@@ -370,7 +370,7 @@ fn add_xobject_resource(
         .unwrap_or_default();
 
     let name = (0..)
-        .map(|i| format!("PdfSign{i}").into_bytes())
+        .map(|i| format!("PdfFlex{i}").into_bytes())
         .find(|n| !xobjects.has(n))
         .expect("an unused name exists");
     xobjects.set(name.clone(), image_id);

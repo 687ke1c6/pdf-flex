@@ -26,7 +26,13 @@ test("export then import round-trips signatures with fresh ids", async () => {
   }
 });
 
+test("imports files exported before the rename from pdf-sign", async () => {
+  const file = JSON.parse(await exportSignatures([sig("a", [1, 2, 3])]));
+  const imported = parseSignatureExport(JSON.stringify({ ...file, format: "pdf-sign-signatures" }));
+  expect(imported).toHaveLength(1);
+});
+
 test("rejects files that aren't signature exports", () => {
-  expect(() => parseSignatureExport(JSON.stringify({ hello: "world" }))).toThrow("isn't a pdf-sign signatures file");
+  expect(() => parseSignatureExport(JSON.stringify({ hello: "world" }))).toThrow("isn't a pdf-flex signatures file");
   expect(() => parseSignatureExport("not json")).toThrow();
 });

@@ -1,5 +1,5 @@
 {
-  "name": "rust:pdf-sign",
+  "name": "rust:pdf-flex",
   "build": { "dockerfile": "Dockerfile" },
   "remoteUser": "vscode",
   "features": {
@@ -8,7 +8,7 @@
   "forwardPorts": [5172, 8080],
   "portsAttributes": {
     "5172": { "label": "vite" },
-    "8080": { "label": "pdf-sign-server" }
+    "8080": { "label": "pdf-flex-server" }
   },
   "mounts": [
     "source=${env:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"

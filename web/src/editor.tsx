@@ -34,7 +34,7 @@ export interface NewSignature {
 /** Default width of a newly placed signature, in points (about 2 in). */
 const DEFAULT_WIDTH = 150;
 /** MIME type for dragging a signature from the sidebar onto a page; the data is the signature id. */
-export const SIGNATURE_DRAG_TYPE = "application/x-pdf-sign-signature";
+export const SIGNATURE_DRAG_TYPE = "application/x-pdf-flex-signature";
 
 const withUrl = (sig: StoredSignature): Signature => ({ ...sig, url: URL.createObjectURL(sig.png) });
 

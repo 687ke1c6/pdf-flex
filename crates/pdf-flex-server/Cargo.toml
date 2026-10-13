@@ -1,9 +1,9 @@
 [package]
-name = "pdf-sign-server"
+name = "pdf-flex-server"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "Static file server for the pdf-sign web app: security headers, caching, compression"
+description = "Static file server for the pdf-flex web app: security headers, caching, compression"
 publish = false
 
 [dependencies]

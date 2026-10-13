@@ -8,7 +8,7 @@ use axum::{
     http::{Request, Response, StatusCode, header},
 };
 use http_body_util::BodyExt;
-use pdf_sign_server::{CSP, app};
+use pdf_flex_server::{CSP, app};
 use tower::ServiceExt;
 
 /// A throwaway dist/ with one file of each kind the app ships.
@@ -19,7 +19,7 @@ fn dist(name: &str) -> PathBuf {
     fs::create_dir_all(dir.join("pdfjs/cmaps")).unwrap();
     fs::write(
         dir.join("index.html"),
-        "<!doctype html><title>pdf-sign</title>",
+        "<!doctype html><title>pdf-flex</title>",
     )
     .unwrap();
     fs::write(
@@ -27,7 +27,7 @@ fn dist(name: &str) -> PathBuf {
         "self.addEventListener('install', () => {});",
     )
     .unwrap();
-    fs::write(dir.join("manifest.webmanifest"), r#"{"name":"pdf-sign"}"#).unwrap();
+    fs::write(dir.join("manifest.webmanifest"), r#"{"name":"pdf-flex"}"#).unwrap();
     fs::write(
         dir.join("assets/index-abc123.js"),
         "console.log(1);".repeat(200),
