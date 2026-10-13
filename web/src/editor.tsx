@@ -18,7 +18,7 @@ import {
 } from "./placement";
 import { alignedBox, alignTarget, limitGroupMove, type AlignEdge, type GroupBox } from "./arrange";
 import { DEFAULT_SHAPE_STYLE, lineBox, lineEnds, SHAPE_KINDS, type ShapeKind, type ShapeStyle } from "./shapes";
-import { savedTool, saveTool, type Tool } from "./ToolRail";
+import { isPanelTool, savedPanelTool, savePanelTool, savedTool, saveTool, type PanelTool, type Tool } from "./ToolRail";
 import { LINE_HEIGHT, opposite, relaidOut, resizedTextSize, type TextStyle } from "./textLayout";
 import {
   exportSignatures,
@@ -100,6 +100,8 @@ function createEditor() {
   const setSelected = (id: string | null) => setSelection(id ? [id] : []);
   const deselect = (id: string) => setSelection((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : ids));
   const [tool, setToolSignal] = createSignal<Tool>(savedTool());
+  const [lastPanelTool, setLastPanelTool] = createSignal<PanelTool>(isPanelTool(tool()) ? (tool() as PanelTool) : savedPanelTool());
+  const [creatingSignature, setCreatingSignature] = createSignal(false);
   const [textStyle, setTextStyleSignal] = createSignal<TextStyle>(load(TEXT_STYLE_KEY, DEFAULT_TEXT_STYLE));
   const [editing, setEditing] = createSignal<string | null>(null);
   const [shapeStyle, setShapeStyleSignal] = createSignal<ShapeStyle>(load(SHAPE_STYLE_KEY, DEFAULT_SHAPE_STYLE));
@@ -219,11 +221,29 @@ function createEditor() {
     selected,
     select,
 
-    /** The tool whose panel is open; it decides what clicking a page does. */
+    /** The active tool: it decides what clicking a page does. */
     tool,
     setTool(next: Tool) {
+      endEdit();
       setToolSignal(next);
       saveTool(next);
+      if (isPanelTool(next)) {
+        setLastPanelTool(next);
+        savePanelTool(next);
+      }
+    },
+    /** The panel tool used most recently (the quick bar offers it). */
+    lastPanelTool,
+
+    /** Whether the New signature dialog is open. */
+    creatingSignature,
+    setCreatingSignature,
+
+    /** Sets the whole selection (e.g. from a box dragged over the page). */
+    selectIds(ids: string[]) {
+      endEdit();
+      const same = ids.length === selection().length && ids.every((id, i) => selection()[i] === id);
+      if (!same) setSelection(ids);
     },
 
     /** The selected placement, if it's a shape. */

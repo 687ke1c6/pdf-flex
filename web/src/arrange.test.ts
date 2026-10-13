@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { alignedBox, alignTarget, limitGroupMove, type AlignEdge, type GroupBox } from "./arrange";
+import { alignedBox, alignTarget, boxContains, limitGroupMove, type AlignEdge, type GroupBox } from "./arrange";
 
 const LETTER = { width: 612, height: 792 };
 // Two boxes: a at (100,200) 50×20, b at (300,400) 100×60.
@@ -53,4 +53,12 @@ describe("limitGroupMove", () => {
   test("an unknown page stops the move", () => {
     expect(limitGroupMove(group, 1, 1, (page) => (page === 1 ? LETTER : undefined))).toBeNull();
   });
+});
+
+test("boxContains: only boxes entirely inside count, edges included", () => {
+  expect(boxContains({ x: 0, y: 0, width: 1000, height: 1000 }, a)).toBe(true);
+  expect(boxContains({ x: 100, y: 200, width: 50, height: 20 }, a)).toBe(true);
+  // Covering most of it isn't enough.
+  expect(boxContains({ x: 101, y: 190, width: 100, height: 100 }, a)).toBe(false);
+  expect(boxContains(a, b)).toBe(false);
 });

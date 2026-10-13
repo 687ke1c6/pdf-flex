@@ -1,8 +1,9 @@
 // The interactive layer over a rendered page: placed items you can move, resize, edit and delete.
-import { For, Match, Show, Switch } from "solid-js";
+import { createSignal, For, Match, Show, Switch } from "solid-js";
+import { boxContains } from "./arrange";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
 import type { PageSize } from "./pdf";
-import { keepsAspect, resized, resizedFree, toCss, toPoints, type Corner, type Placement, type Point } from "./placement";
+import { keepsAspect, resized, resizedFree, toCss, toPoints, type Box, type Corner, type Placement, type Point } from "./placement";
 import { ShapePreview } from "./ShapeBox";
 import { clickGeometry, dragGeometry, isSymbol } from "./shapes";
 import { TextEditor, TextPreview } from "./TextBox";
@@ -48,25 +49,75 @@ export function PageOverlay(props: Props) {
   };
 
   /**
-   * Clicking empty page space adds text with the Text tool, draws a shape with
-   * the Shapes tool, and otherwise clears the selection.
+   * A press on empty page space does what the active tool does: Select drags a
+   * selection box (a click clears the selection), Signatures places the active
+   * signature, Text adds a text box, Shapes draws a shape. Hand never gets
+   * here: the viewer pans instead.
    */
   function onEmptySpace(e: PointerEvent) {
-    if (e.target !== e.currentTarget) return;
-    // Ctrl/Cmd/Shift + click adds to the selection; on empty space, it leaves the selection alone.
-    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
-    if (editor.tool() === "text" && e.button === 0) {
-      // Keeps focus from moving to the page, so the new box's textarea keeps it.
-      e.preventDefault();
-      editor.addText(props.pageNumber, pointerOnPage(e, e.currentTarget as Element));
-      return;
+    if (e.target !== e.currentTarget || e.button !== 0) return;
+    const layer = e.currentTarget as Element;
+    // Ctrl/Cmd/Shift adds to the selection.
+    const additive = e.ctrlKey || e.metaKey || e.shiftKey;
+    // Keeps focus where it is: a new text box's textarea takes it next.
+    e.preventDefault();
+    switch (editor.tool()) {
+      case "select":
+        boxSelect(e, layer, additive);
+        return;
+      case "hand":
+        return;
     }
-    if (editor.tool() === "shapes" && e.button === 0) {
-      e.preventDefault();
-      drawShape(e, e.currentTarget as Element);
-      return;
+    // With a modifier held, a click is about the selection: it leaves it alone.
+    if (additive) return;
+    switch (editor.tool()) {
+      case "signatures":
+        if (editor.active()) editor.add(props.pageNumber, pointerOnPage(e, layer));
+        else editor.setCreatingSignature(true);
+        return;
+      case "text":
+        editor.addText(props.pageNumber, pointerOnPage(e, layer));
+        return;
+      case "shapes":
+        drawShape(e, layer);
+        return;
     }
-    editor.select(null);
+  }
+
+  /** The box being dragged out to select with, in points on this page. */
+  const [selectBox, setSelectBox] = createSignal<Box | null>(null);
+
+  /**
+   * Drags a box on this page that selects every item entirely inside it (added
+   * to the selection with `additive`). A click without dragging clears the selection.
+   */
+  function boxSelect(e: PointerEvent, layer: Element, additive: boolean) {
+    const start = onPage(e, layer);
+    const base = additive ? editor.selection() : [];
+    let dragged = false;
+    const move = (m: PointerEvent) => {
+      if (m.pointerId !== e.pointerId) return;
+      if (!dragged && Math.hypot(m.clientX - e.clientX, m.clientY - e.clientY) < 4) return;
+      dragged = true;
+      const at = onPage(m, layer);
+      const box = { x: Math.min(start.x, at.x), y: Math.min(start.y, at.y), width: Math.abs(at.x - start.x), height: Math.abs(at.y - start.y) };
+      setSelectBox(box);
+      const hits = onThisPage()
+        .filter((p) => boxContains(box, p))
+        .map((p) => p.id);
+      editor.selectIds([...base, ...hits.filter((id) => !base.includes(id))]);
+    };
+    const end = (u: PointerEvent) => {
+      if (u.pointerId !== e.pointerId) return;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      setSelectBox(null);
+      if (!dragged && !additive) editor.select(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
   }
 
   /** Drags out a new shape from where the pointer went down; a click adds a default-sized one. */
@@ -108,7 +159,11 @@ export function PageOverlay(props: Props) {
   return (
     <div
       class="page-overlay"
-      classList={{ "add-text": editor.tool() === "text", "draw-shape": editor.tool() === "shapes" }}
+      classList={{
+        "add-text": editor.tool() === "text",
+        "draw-shape": editor.tool() === "shapes",
+        "place-signature": editor.tool() === "signatures",
+      }}
       data-page={props.pageNumber}
       onDragOver={onDragOver}
       onDrop={onDrop}
@@ -119,6 +174,17 @@ export function PageOverlay(props: Props) {
           <PlacementBox placement={placement} size={props.size} scale={props.scale} pointerOnPage={pointerOnPage} onPage={onPage} />
         )}
       </For>
+      <Show when={selectBox()}>
+        {(box) => {
+          const css = () => toCss(box(), props.size, props.scale);
+          return (
+            <div
+              class="select-box"
+              style={{ left: `${css().left}px`, top: `${css().top}px`, width: `${css().width}px`, height: `${css().height}px` }}
+            />
+          );
+        }}
+      </Show>
     </div>
   );
 }
@@ -251,7 +317,7 @@ function PlacementBox(props: BoxProps) {
         height: `${css().height}px`,
       }}
       onPointerDown={startMove}
-      onDblClick={() => props.placement.kind === "text" && editor.beginEdit(props.placement.id)}
+      onDblClick={() => props.placement.kind === "text" && editor.tool() !== "hand" && editor.beginEdit(props.placement.id)}
       // On a Mac, Ctrl + click is also a right click: keep the menu away while selecting.
       onContextMenu={(e) => e.ctrlKey && e.preventDefault()}
     >

@@ -72,9 +72,20 @@ export function StatusBar(props: Props) {
     if (shape?.ends) return "Drag the ends to change the line · Arrow keys nudge (Shift: 10 pt) · Delete removes";
     if (shape && !isSymbol(shape.shape)) return "Drag a corner to resize (Shift: keep proportions) · Arrow keys nudge · Delete removes";
     if (editor.selected()) return "Arrow keys nudge (Shift: 10 pt) · Delete removes · Ctrl+click another to select both";
-    if (editor.tool() === "text") return "Click on a page to add text";
-    if (editor.tool() === "shapes") return DRAW_HINTS[editor.shapeTool()];
-    return "Drag a signature onto a page to place it";
+    switch (editor.tool()) {
+      case "select":
+        return "Click to select · Drag a box around items to select them · Hold Space (or H) to move around";
+      case "hand":
+        return "Drag to move around the document · V to select";
+      case "signatures": {
+        const sig = editor.active();
+        return sig ? `Click on a page to place “${sig.name}”` : "Click on a page to make your first signature";
+      }
+      case "text":
+        return "Click on a page to add text";
+      case "shapes":
+        return DRAW_HINTS[editor.shapeTool()];
+    }
   };
 
   return (

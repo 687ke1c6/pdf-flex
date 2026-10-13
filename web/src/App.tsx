@@ -7,10 +7,12 @@ import { draftStore, formatSavedAt, usablePlacements, type Draft } from "./draft
 import { SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
 import { openPdf, type LoadedPdf } from "./pdf";
 import { Sidebar } from "./Sidebar";
+import { QuickBar, toolForKey } from "./ToolRail";
 import { StatusBar } from "./StatusBar";
 import { inspectPdf, sameLayout, stampPdf } from "./stamper";
 import { clampZoom, stepZoom } from "./zoom";
 import { AboutDialog, UpdatePrompt } from "./pwa";
+import { NewSignatureDialog } from "./NewSignatureDialog";
 import { RecentDrafts } from "./RecentDrafts";
 import { Viewer, type ViewerApi } from "./Viewer";
 
@@ -237,7 +239,20 @@ export function App() {
       editor.selectAll(page());
       return;
     }
-    if (e.key === "Escape") editor.select(null);
+    // Escape steps back: an edit finishes in its own field; then the selection clears; then back to Select.
+    if (e.key === "Escape") {
+      if (editor.selection().length) editor.select(null);
+      else if (editor.tool() !== "select") editor.setTool("select");
+      return;
+    }
+
+    // Tool shortcuts: V Select, H Hand, S Signatures, T Text, R Shapes.
+    const tool = !typing && !mod && !e.altKey && file() ? toolForKey(e.key) : undefined;
+    if (tool) {
+      e.preventDefault();
+      editor.setTool(tool);
+      return;
+    }
 
     // Ctrl/Cmd + plus, minus, 0 zoom the document instead of the browser UI.
     if (!(e.ctrlKey || e.metaKey) || !file()) return;
@@ -405,6 +420,10 @@ export function App() {
         </div>
       </Show>
 
+      <Show when={editor.creatingSignature()}>
+        <NewSignatureDialog onClose={() => editor.setCreatingSignature(false)} />
+      </Show>
+
       <Show when={offer()}>
         {(draft) => (
           <div class="restore" role="status">
@@ -453,6 +472,10 @@ export function App() {
             <div class="overlay drop">Drop to open</div>
           </Show>
         </main>
+        {/* Centred on the whole width below the top bar, so opening a panel doesn't move it. */}
+        <Show when={file()}>
+          <QuickBar active={editor.tool()} last={editor.lastPanelTool()} onSelect={(t) => editor.setTool(t)} />
+        </Show>
       </div>
       <Show when={file()}>
         <StatusBar onGoToPage={(n) => viewer?.goToPage(n)} autosave={autosave.state()} />

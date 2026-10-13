@@ -1,11 +1,15 @@
-// The strip of tool buttons on the far left. Each tool has its own panel next to it.
+// Tools: exactly one is active, and it decides what a click on the page does.
+// Select and Hand have no settings; the others have a panel, opened from the
+// rail on the far left.
 import { For, type JSX } from "solid-js";
 
-export type Tool = "signatures" | "text" | "shapes";
+export type PanelTool = "signatures" | "text" | "shapes";
+export type Tool = "select" | "hand" | PanelTool;
 
 interface ToolInfo {
-  id: Tool;
   label: string;
+  /** Keyboard shortcut (a letter). */
+  key: string;
   icon: () => JSX.Element;
 }
 
@@ -16,56 +20,106 @@ const icon = (path: string) => () => (
   </svg>
 );
 
-export const TOOLS: ToolInfo[] = [
-  { id: "signatures", label: "Signatures", icon: icon("M3 17c3-1 4-8 6-8s0 7 2 7 3-4 4-4 1 3 3 3 2-1 3-1M3 21h18") },
-  { id: "text", label: "Text", icon: icon("M5 6V4h14v2M12 4v16M9 20h6") },
-  { id: "shapes", label: "Shapes", icon: icon("M3 3h9v9H3zM17.5 11a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9M6 21l5-7") },
-];
+export const TOOL_INFO: Record<Tool, ToolInfo> = {
+  select: { label: "Select", key: "V", icon: icon("M6 3l12 9-5.5 1.2L15 19l-2.4 1.1-2.5-5.6L6 18z") },
+  hand: {
+    label: "Hand",
+    key: "H",
+    icon: icon(
+      "M8 12V6.5a1.5 1.5 0 0 1 3 0V11m0-1V4.5a1.5 1.5 0 0 1 3 0V11m0-.5V6a1.5 1.5 0 0 1 3 0v5m0-1.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1a6.5 6.5 0 0 1-5.4-2.9L4 14.2a1.5 1.5 0 0 1 2.4-1.8L8 14.5",
+    ),
+  },
+  signatures: { label: "Signatures", key: "S", icon: icon("M3 17c3-1 4-8 6-8s0 7 2 7 3-4 4-4 1 3 3 3 2-1 3-1M3 21h18") },
+  text: { label: "Text", key: "T", icon: icon("M5 6V4h14v2M12 4v16M9 20h6") },
+  shapes: { label: "Shapes", key: "R", icon: icon("M3 3h9v9H3zM17.5 11a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9M6 21l5-7") },
+};
 
-const STORAGE_KEY = "pdf-flex:tool";
+export const PANEL_TOOLS: PanelTool[] = ["signatures", "text", "shapes"];
+export const isPanelTool = (tool: Tool): tool is PanelTool => (PANEL_TOOLS as Tool[]).includes(tool);
 
-/** The tool open last time, or the first one. Storage may be unavailable (private mode, blocked). */
-export function savedTool(): Tool {
+/** The tool for a shortcut key, if any. */
+export const toolForKey = (key: string): Tool | undefined =>
+  (Object.keys(TOOL_INFO) as Tool[]).find((t) => TOOL_INFO[t].key === key.toUpperCase());
+
+const TOOL_KEY = "pdf-flex:tool";
+const LAST_PANEL_TOOL_KEY = "pdf-flex:last-tool";
+
+function load<T extends string>(key: string, valid: readonly T[], fallback: T): T {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return TOOLS.find((t) => t.id === saved)?.id ?? TOOLS[0].id;
+    const saved = localStorage.getItem(key);
+    return valid.find((t) => t === saved) ?? fallback;
   } catch {
-    return TOOLS[0].id;
+    // Storage may be unavailable (private mode, blocked).
+    return fallback;
   }
 }
 
-export function saveTool(tool: Tool) {
+function store(key: string, value: string) {
   try {
-    localStorage.setItem(STORAGE_KEY, tool);
+    localStorage.setItem(key, value);
   } catch {
     // Not remembered; nothing else depends on it.
   }
 }
 
+/** The tool in use last time; Select the first time. */
+export const savedTool = () => load(TOOL_KEY, Object.keys(TOOL_INFO) as Tool[], "select");
+export const saveTool = (tool: Tool) => store(TOOL_KEY, tool);
+/** The panel tool used most recently: the quick bar's third button. */
+export const savedPanelTool = () => load(LAST_PANEL_TOOL_KEY, PANEL_TOOLS, "signatures");
+export const savePanelTool = (tool: PanelTool) => store(LAST_PANEL_TOOL_KEY, tool);
+
+/** A tool's tooltip: its name and shortcut. */
+export const toolTitle = (tool: Tool) => `${TOOL_INFO[tool].label} (${TOOL_INFO[tool].key})`;
+
 interface Props {
   active: Tool;
   /** Whether the active tool's panel is showing. */
   open: boolean;
-  /** Clicking the active tool toggles its panel; clicking another tool opens that one. */
-  onSelect(tool: Tool): void;
+  onSelect(tool: PanelTool): void;
 }
 
+/** The panel tools, down the left edge. */
 export function ToolRail(props: Props) {
   return (
     <nav class="tool-rail" aria-label="Tools">
-      <For each={TOOLS}>
+      <For each={PANEL_TOOLS}>
         {(tool) => (
           <button
-            classList={{ active: props.active === tool.id }}
-            title={tool.label}
-            aria-label={tool.label}
-            aria-pressed={props.active === tool.id && props.open}
-            onClick={() => props.onSelect(tool.id)}
+            classList={{ active: props.active === tool }}
+            title={toolTitle(tool)}
+            aria-label={TOOL_INFO[tool].label}
+            aria-pressed={props.active === tool && props.open}
+            onClick={() => props.onSelect(tool)}
           >
-            {tool.icon()}
+            {TOOL_INFO[tool].icon()}
           </button>
         )}
       </For>
     </nav>
+  );
+}
+
+/** Select, Hand, and the last panel tool used, floating at the bottom of the document. Icons only. */
+export function QuickBar(props: { active: Tool; last: PanelTool; onSelect(tool: Tool): void }) {
+  const button = (tool: Tool) => (
+    <button
+      classList={{ active: props.active === tool }}
+      title={toolTitle(tool)}
+      aria-label={TOOL_INFO[tool].label}
+      aria-pressed={props.active === tool}
+      onClick={() => props.onSelect(tool)}
+    >
+      {TOOL_INFO[tool].icon()}
+    </button>
+  );
+  return (
+    <div class="quick-bar" role="toolbar" aria-label="Quick tools">
+      {button("select")}
+      {button("hand")}
+      <span class="separator" aria-hidden="true" />
+      {/* Re-created when the last tool changes, so its icon follows. */}
+      <For each={[props.last]}>{(tool) => button(tool)}</For>
+    </div>
   );
 }

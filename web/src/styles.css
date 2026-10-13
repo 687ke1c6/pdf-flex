@@ -88,7 +88,11 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 /* Sidebar (tool rail + panel) + main area */
 .body { position: relative; display: flex; flex: 1; min-height: 0; }
 .sidebar { flex: none; display: flex; background: var(--panel); border-right: 1px solid var(--border); }
-.tool-rail { width: 3rem; flex: none; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; padding: 0.5rem 0; }
+/* Above the panel, which slides out from under it. */
+.tool-rail {
+  position: relative; z-index: 11; width: 3rem; flex: none; display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+  padding: 0.5rem 0; background: var(--panel);
+}
 .tool-rail button {
   width: 2.25rem; height: 2.25rem; padding: 0; display: grid; place-items: center;
   border: none; border-radius: 6px; background: none; color: var(--muted);
@@ -96,16 +100,23 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .tool-rail button:hover { background: rgb(0 0 0 / 0.05); color: var(--text); }
 .tool-rail button.active { background: rgb(37 99 235 / 0.1); color: var(--accent); }
 .tool-rail svg { width: 1.35rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* The panel floats over the document, next to the rail, so opening or closing it never moves the pages.
+   It slides out from under the rail; closed, it's hidden once the slide has finished. */
 .sidebar-panel {
-  width: 15rem; display: flex; flex-direction: column; gap: 1rem;
-  padding: 0.75rem; border-left: 1px solid var(--border); overflow-y: auto;
+  position: absolute; top: 0; bottom: 0; left: 3rem; z-index: 10;
+  width: min(15rem, calc(100vw - 3rem)); display: flex; flex-direction: column; gap: 1rem;
+  padding: 0.75rem; overflow-y: auto;
+  background: var(--panel); border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+  box-shadow: 4px 0 16px rgb(0 0 0 / 0.12);
+  transform: translateX(-100%); opacity: 0; visibility: hidden;
+  transition: transform 200ms ease-in, opacity 150ms ease-in, visibility 0s linear 200ms;
 }
-/* Narrow windows: the panel floats over the document. The width matches NARROW in Sidebar.tsx. */
-@media (max-width: 640px) {
-  .sidebar-panel {
-    position: absolute; top: 0; bottom: 0; left: 3rem; z-index: 10;
-    background: var(--panel); border-right: 1px solid var(--border); box-shadow: 4px 0 16px rgb(0 0 0 / 0.15);
-  }
+.sidebar-panel.open {
+  transform: none; opacity: 1; visibility: visible;
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 150ms ease-out, visibility 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-panel, .sidebar-panel.open { transition: none; }
 }
 .sidebar section.grow { flex: 1; }
 .sidebar h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 0.5rem; }
@@ -186,6 +197,23 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .text-editor textarea { background: transparent; color: inherit; caret-color: currentColor; resize: none; outline: none; }
 .text-backdrop { color: transparent; pointer-events: none; }
 .text-backdrop mark { color: transparent; background: rgb(220 38 38 / 0.15); text-decoration: underline wavy #dc2626; }
+
+/* Tools: cursors, the selection box, and the quick bar */
+.page-overlay.place-signature { cursor: copy; }
+.select-box { position: absolute; pointer-events: none; border: 1px solid var(--accent); background: rgb(37 99 235 / 0.08); }
+.quick-bar {
+  /* Placed in .body (the full width under the top bar), above a narrow screen's floating panel. */
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 15;
+  display: flex; align-items: center; gap: 0.15rem; padding: 0.25rem;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+}
+.quick-bar button {
+  width: 2.25rem; height: 2.25rem; padding: 0; border: none; border-radius: 7px; background: none; color: var(--muted);
+}
+.quick-bar button:hover { background: rgb(0 0 0 / 0.06); color: var(--text); }
+.quick-bar button.active { background: rgb(37 99 235 / 0.12); color: var(--accent); }
+.quick-bar svg { width: 1.3rem; height: 1.3rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.quick-bar .separator { align-self: stretch; width: 1px; margin: 0.3rem 0.15rem; background: var(--border); }
 
 /* Shapes on a page, and their tool */
 .page-overlay.draw-shape { cursor: crosshair; }

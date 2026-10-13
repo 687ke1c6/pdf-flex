@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount } from "solid-js";
+import { useEditor } from "./editor";
 import { PageView } from "./PageView";
 import type { LoadedPdf } from "./pdf";
 import { clampZoom, CSS_PX_PER_PT, fitWidthZoom } from "./zoom";
@@ -31,6 +32,7 @@ interface Anchor {
 }
 
 export function Viewer(props: Props) {
+  const editor = useEditor();
   let scroller!: HTMLDivElement;
   let pagesEl!: HTMLDivElement;
   const pageEls: HTMLDivElement[] = [];
@@ -40,7 +42,9 @@ export function Viewer(props: Props) {
   const [active, setActive] = createSignal(new Set<number>(), { equals: false });
   const [dprTick, setDprTick] = createSignal(0);
   /** Space is held: dragging pans instead of acting on the page. */
-  const [panReady, setPanReady] = createSignal(false);
+  const [spaceHeld, setSpaceHeld] = createSignal(false);
+  /** Dragging pans: Space is held, or the Hand tool is active. */
+  const panReady = () => spaceHeld() || editor.tool() === "hand";
   const [panning, setPanning] = createSignal(false);
   let anchor: Anchor | undefined;
 
@@ -112,16 +116,16 @@ export function Viewer(props: Props) {
     if (e.code !== "Space" || typingOrDialog(e)) return;
     // Space would otherwise scroll the page, or press a focused button.
     e.preventDefault();
-    setPanReady(true);
+    setSpaceHeld(true);
   }
 
   function onKeyUp(e: KeyboardEvent) {
-    if (e.code === "Space") setPanReady(false);
+    if (e.code === "Space") setSpaceHeld(false);
   }
 
   /**
-   * With Space held, a drag pans the document. Caught before it reaches the
-   * page, so it never moves, draws or adds anything.
+   * With Space held or the Hand tool, a drag pans the document. Caught before
+   * it reaches the page, so it never moves, draws or adds anything.
    */
   function onPanStart(e: PointerEvent) {
     if (!panReady() || e.button !== 0) return;
@@ -148,7 +152,7 @@ export function Viewer(props: Props) {
   }
 
   // Letting go of Space while the window is in the background never arrives as a keyup.
-  const onBlur = () => setPanReady(false);
+  const onBlur = () => setSpaceHeld(false);
 
   function fitWidth() {
     anchor = centerAnchor();

@@ -58,7 +58,8 @@ Each chunk ends with something you can run and check, then a review and a commit
 | 4 | Text tool in the app | Add and edit text in the browser; in the download it is selectable, searchable and where the preview showed it | ✅ (pending your check) |
 | 5 | Image text (other fonts) | Text in a script font saves as a crisp image, positioned as previewed | 🔜 |
 | 6 | Shapes and symbols | Draw each shape and symbol, style it, save; it matches the preview in Chrome and Acrobat | ✅ (pending your check) |
-| 7 | Multi-select and align | Ctrl+click several items; delete, nudge, drag and align them together | ✅ (pending your check) |
+| 7 | Multi-select and align | Ctrl+click several items; delete, nudge, drag and align them together | ✅ |
+| 8 | Tools: Select, Hand and a quick bar | One active tool decides what a page click does, in every tool; the quick bar switches between Select, Hand and the last tool | ✅ |
 
 ### Chunk 1: Tool rail and panels
 A UI-only refactor; no behaviour changes.
@@ -224,13 +225,43 @@ Added after chunk 6, at your request.
 - **Align** (top bar, before Download, shown with 2+ selected): **left, centre, right** line items up along a vertical line; **top, middle, bottom** along a horizontal one. Edges and centres are those of the selection's bounding box (as Figma and PowerPoint do). Items on different pages line up by their position on the page. One undo step.
 - **Pure functions** in `arrange.ts` (`alignTarget`, `alignedBox`, `limitGroupMove`), 8 tests.
 - **Status bar:** "3 selected · Delete removes them · Arrow keys move them · Ctrl+click adds or removes".
-- **Later:** drag a box on empty space to select what's inside; distribute three or more evenly.
+- **Later:** distribute three or more evenly. (Box selection came in chunk 8.)
 - **Your checks:**
   1. Ctrl+click (Cmd+click on a Mac) a signature, a text box and a shape: all three outlined, no handles. Ctrl+click one again to drop it.
   2. Delete removes them all; undo brings them all back.
   3. Arrow keys and dragging move them together; at a page edge the whole group stops.
   4. Each of the six align buttons, then undo. Try items on two different pages.
   5. Ctrl+A on a page; Ctrl+click in the items list.
+
+### Chunk 8: Tools: Select, Hand and a quick bar
+Added after chunk 7: clicking the page did nothing with the Signatures panel open, but added text or a shape with the others, and an open panel didn't read as a selected tool.
+- **One active tool** decides what a press on empty page space does:
+
+  | Tool | Click | Drag on empty space | Cursor |
+  |---|---|---|---|
+  | **Select** (default, V) | Selects; empty space clears | A box that selects every item **entirely inside it** (Ctrl/Cmd/Shift adds) | Arrow |
+  | **Hand** (H) | Nothing | Pans, as holding Space does | Hand |
+  | **Signatures** (S) | Places the active signature, centred; with an empty library, opens New signature | (Dragging from the library still works) | Copy |
+  | **Text** (T) | Adds a text box | | Text |
+  | **Shapes** (R) | Adds the chosen shape | Draws it | Crosshair |
+
+  In every tool except Hand, clicking an item selects and moves it, and Ctrl+click adds it to the selection. Space still pans while held. After placing something you stay in that tool.
+- **Panels are tools:** opening a panel from the rail selects that tool; clicking its rail button again closes it and goes back to Select. Below 640 px (where the panel covers the page) the rail opens and closes the settings without changing the tool, and a tool picked from the quick bar is used with its panel closed.
+- **Quick bar** (`QuickBar` in `ToolRail.tsx`): floating at the bottom centre of the area under the top bar (the full width, so opening a panel doesn't move it), icons only: Select, Hand │ the last panel tool used (its own icon). Tooltips give the names and shortcuts. The active tool is highlighted there and in the rail.
+- **The panel always floats** over the document, next to the rail, at every width (it used to only below 640 px), so opening or closing it never moves the pages.
+- **Escape** steps back: finishes a text edit (in its field), then clears the selection, then returns to Select.
+- **Remembered:** the active tool and the last panel tool (`localStorage`).
+- The **New signature** dialog moved from the Signatures panel to the app, so a page click can open it with the panel closed.
+- **Status bar** hints for each tool, e.g. "Click on a page to place “Jane”".
+- **Verified (no browser):** 76 web tests (1 new for box overlap), typecheck, build.
+- **Your checks:**
+  1. Start (or press V): Select is highlighted in the quick bar, no panel open. Drag a box over several items, with and without Ctrl; click empty space to clear.
+  2. H, or the hand button: dragging pans, and items can't be moved or edited. Space still pans in other tools.
+  3. Open each panel from the rail: the tool is highlighted in the rail and the quick bar. Click on a page: Signatures places the active signature, Text adds text, Shapes adds a shape. Click the rail button again: the panel closes and Select is back.
+  4. The quick bar's third button follows the last panel tool used and reopens it.
+  5. Shortcuts S, T, R, V, H, and Escape stepping back. They don't fire while typing.
+  6. With an empty signature library, a click with Signatures opens New signature.
+  7. Below 640 px: picking Text in the quick bar lets you click to add text with the panel closed; the rail opens its settings.
 
 ---
 

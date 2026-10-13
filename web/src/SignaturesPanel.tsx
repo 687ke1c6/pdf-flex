@@ -2,7 +2,6 @@
 import { createSignal, For, Show } from "solid-js";
 import { download } from "./download";
 import { SIGNATURE_DRAG_TYPE, useEditor, type Signature } from "./editor";
-import { NewSignatureDialog } from "./NewSignatureDialog";
 
 interface Props {
   currentPage: number;
@@ -11,7 +10,6 @@ interface Props {
 
 export function SignaturesPanel(props: Props) {
   const editor = useEditor();
-  const [creating, setCreating] = createSignal(false);
   let libraryInput!: HTMLInputElement;
 
   async function exportLibrary() {
@@ -40,7 +38,7 @@ export function SignaturesPanel(props: Props) {
             Place on page {props.currentPage}
           </button>
         </Show>
-        <button class="block" classList={{ primary: !editor.library.length }} onClick={() => setCreating(true)}>
+        <button class="block" classList={{ primary: !editor.library.length }} onClick={() => editor.setCreatingSignature(true)}>
           New signature…
         </button>
         <div class="library-file">
@@ -65,9 +63,6 @@ export function SignaturesPanel(props: Props) {
         </div>
       </section>
 
-      <Show when={creating()}>
-        <NewSignatureDialog onClose={() => setCreating(false)} />
-      </Show>
     </>
   );
 }
