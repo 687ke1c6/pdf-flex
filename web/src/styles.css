@@ -49,8 +49,9 @@
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); }
 
-/* The dynamic viewport height: on phones it follows the address bar as it shows and hides. */
-.app { display: flex; flex-direction: column; height: 100%; height: 100dvh; }
+/* Pinned to the visible screen: on phones it grows and shrinks with the address bar (fixed
+   elements follow it, where height: 100% on html doesn't). Nothing outside it scrolls. */
+.app { position: fixed; inset: 0; display: flex; flex-direction: column; }
 /* Pinching zooms the document (see Viewer.tsx), never the whole app. */
 html { touch-action: pan-x pan-y; }
 
@@ -172,7 +173,6 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 @media (max-width: 640px) {
   .tool-rail .rail-basic { display: grid; }
   .tool-rail .separator.rail-basic { display: block; }
-  .quick-bar { display: none; }
 }
 .tool-rail svg { width: 1.35rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 /* The panel floats over the document, next to the rail, so opening or closing it never moves the pages.
@@ -286,9 +286,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .handle.sw { left: 0; bottom: 0; cursor: nesw-resize; }
 .handle.se { right: 0; bottom: 0; cursor: nwse-resize; }
 .placement .remove {
-  position: absolute; top: -1.6rem; right: -0.5rem; width: 1.3rem; height: 1.3rem; padding: 0;
-  border-radius: 50%; line-height: 1; font-size: 0.95rem; color: var(--danger);
+  /* Off the north-east corner on the 45° diagonal: the same offset across and up, clear of the corner handle. */
+  position: absolute; top: calc(-1.3rem - 6px); right: calc(-1.3rem - 6px); width: 1.3rem; height: 1.3rem; padding: 0;
+  border-radius: 50%; line-height: 1; font-size: 0.95rem;
+  /* On the page, which is white in both themes: light-theme colours always. */
+  background: var(--paper); border-color: #d0d2d6; color: #667;
 }
+.placement .remove:hover { border-color: #999; background: #fde8e8; color: #8a1c1c; }
+.placement .remove svg { width: 0.6rem; height: 0.6rem; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 
 /* Text placements: the preview is an SVG in points; the editor is a textarea over the box. */
 .page-overlay.add-text { cursor: text; }
@@ -342,6 +347,10 @@ button.danger:hover { border-color: var(--danger); background: var(--danger-bg);
 .quick-bar button.active { background: var(--accent-soft); color: var(--accent); }
 .quick-bar svg { width: 1.3rem; height: 1.3rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .quick-bar .separator { align-self: stretch; width: 1px; margin: 0.3rem 0.15rem; background: var(--border); }
+/* Narrow (touch) screens have Select and Hand in the rail instead. After the rules above, so it wins. */
+@media (max-width: 640px) {
+  .quick-bar { display: none; }
+}
 
 /* Shapes on a page, and their tool */
 .page-overlay.draw-shape { cursor: crosshair; }

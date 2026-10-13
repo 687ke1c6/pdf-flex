@@ -357,10 +357,14 @@ function PlacementBox(props: BoxProps) {
         <button
           class="remove"
           title="Remove (Delete)"
+          aria-label="Remove"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => editor.remove(props.placement.id)}
         >
-          ×
+          {/* Drawn rather than a "×" character, so it sits dead centre whatever the font. */}
+          <svg viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" />
+          </svg>
         </button>
       </Show>
     </div>
