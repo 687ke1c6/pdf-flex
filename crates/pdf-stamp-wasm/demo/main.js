@@ -74,12 +74,19 @@ $("width").addEventListener("input", refresh);
 
 $("go").addEventListener("click", () => {
   const width = Number($("width").value);
-  const placement = [0, Number($("page").value), Number($("x").value), Number($("y").value), width, width / state.aspect];
+  const placement = {
+    page: Number($("page").value),
+    x: Number($("x").value),
+    y: Number($("y").value),
+    width,
+    height: width / state.aspect,
+    item: { kind: "image", image: 0 },
+  };
   try {
     const started = performance.now();
-    const out = stamp(state.pdf, state.sig, new Uint32Array([state.sig.length]), new Float64Array(placement));
+    const out = stamp(state.pdf, state.sig, new Uint32Array([state.sig.length]), [placement]);
     const ms = (performance.now() - started).toFixed(1);
-    download(out, state.pdfName.replace(/\.pdf$/i, "") + "-signed.pdf");
+    download(out, state.pdfName.replace(/\.pdf$/i, "") + "-edited.pdf");
     status(`Stamped in ${ms} ms → ${(out.length / 1024).toFixed(1)} KB, downloaded.`);
   } catch (err) {
     status(`Error: ${err.message ?? err}`, true);

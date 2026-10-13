@@ -31,11 +31,11 @@ pub const MAX_DECOMPRESSED_SIZE: usize = 64 << 20;
 /// signatures are at most 1600 px; this only stops absurd inputs.
 pub const MAX_IMAGE_SIDE: u32 = 10_000;
 
-/// Which image to draw where, in display-space points.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// What to draw, and where: a box in display-space points.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Placement {
-    /// Index into the `images` passed to [`stamp`].
-    pub image: usize,
+    pub item: Item,
     /// 1-based page number.
     pub page: u32,
     /// Bottom-left corner.
@@ -45,6 +45,18 @@ pub struct Placement {
     pub height: f32,
 }
 
+/// What a placement draws, stretched to fill its box.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(tag = "kind", rename_all = "camelCase")
+)]
+pub enum Item {
+    /// One of the `images` passed to [`stamp`], by index.
+    Image { image: usize },
+}
+
 /// Everything that can go wrong. The messages are written for end users: the
 /// web app shows them as they are.
 #[derive(Debug, thiserror::Error)]
@@ -52,7 +64,7 @@ pub enum Error {
     #[error("This file isn't a PDF.")]
     NotPdf,
     #[error(
-        "This PDF is password-protected or has security restrictions, so it can't be signed here. \
+        "This PDF is password-protected or has security restrictions, so it can't be edited here. \
          Remove the protection first, for example by printing it to a new PDF."
     )]
     Encrypted,
@@ -64,7 +76,7 @@ pub enum Error {
     TooLarge,
     #[error("This PDF is damaged and couldn't be read ({0}).")]
     Damaged(String),
-    #[error("Page {page} is damaged and can't be signed ({reason}).")]
+    #[error("Page {page} is damaged and can't be edited ({reason}).")]
     BadPage { page: u32, reason: &'static str },
     #[error(
         "Page {page} doesn't exist: this PDF has {count} {}.",
@@ -78,11 +90,11 @@ pub enum Error {
          The limit is {MAX_IMAGE_SIDE} pixels on each side."
     )]
     ImageTooLarge { width: u32, height: u32 },
-    #[error("Signature {index} has an invalid position or size.")]
+    #[error("Placed item {} has an invalid position or size.", index + 1)]
     BadPlacement { index: usize },
     #[error("placement uses image {index}, but only {count} images were given")]
     NoSuchImage { index: usize, count: usize },
-    #[error("The signed PDF couldn't be written ({0}).")]
+    #[error("The edited PDF couldn't be written ({0}).")]
     Write(String),
 }
 
@@ -98,7 +110,7 @@ pub struct Info {
     pub digitally_signed: bool,
 }
 
-/// Checks that `pdf` can be signed, without changing it.
+/// Checks that `pdf` can be edited, without changing it.
 ///
 /// Returns the same error [`stamp`] would for an unusable file, so a frontend
 /// can warn as soon as a document is opened rather than when it is saved.
@@ -249,9 +261,10 @@ pub fn stamp(pdf: &[u8], images: &[&[u8]], placements: &[Placement]) -> Result<V
     let pages = doc.get_pages();
     let mut by_page: BTreeMap<u32, Vec<&Placement>> = BTreeMap::new();
     for (index, p) in placements.iter().enumerate() {
-        if p.image >= images.len() {
+        let Item::Image { image } = p.item;
+        if image >= images.len() {
             return Err(Error::NoSuchImage {
-                index: p.image,
+                index: image,
                 count: images.len(),
             });
         }
@@ -275,8 +288,9 @@ pub fn stamp(pdf: &[u8], images: &[&[u8]], placements: &[Placement]) -> Result<V
     // Each image used is embedded once and shared by all its placements.
     let mut image_ids: HashMap<usize, ObjectId> = HashMap::new();
     for p in placements {
-        if let Entry::Vacant(slot) = image_ids.entry(p.image) {
-            let decoded = decode_image(images[p.image])?;
+        let Item::Image { image } = p.item;
+        if let Entry::Vacant(slot) = image_ids.entry(image) {
+            let decoded = decode_image(images[image])?;
             slot.insert(add_image(&mut doc, &decoded));
         }
     }
@@ -288,18 +302,23 @@ pub fn stamp(pdf: &[u8], images: &[&[u8]], placements: &[Placement]) -> Result<V
         // Resource name for each image used on this page.
         let mut names: HashMap<usize, String> = HashMap::new();
         for p in &placements {
-            if let Entry::Vacant(slot) = names.entry(p.image) {
-                let name = add_xobject_resource(&mut doc, page_id, page, image_ids[&p.image])?;
+            let Item::Image { image } = p.item;
+            if let Entry::Vacant(slot) = names.entry(image) {
+                let name = add_xobject_resource(&mut doc, page_id, page, image_ids[&image])?;
                 slot.insert(String::from_utf8_lossy(&name).into_owned());
             }
         }
 
+        // Each item is drawn in its own q … Q, from display space.
         let mut ops = String::new();
         for p in placements {
-            ops += &format!(
-                "q {to_user} cm {} 0 0 {} {} {} cm /{} Do Q\n",
-                p.width, p.height, p.x, p.y, names[&p.image]
-            );
+            let draw = match p.item {
+                Item::Image { image } => format!(
+                    "{} 0 0 {} {} {} cm /{} Do",
+                    p.width, p.height, p.x, p.y, names[&image]
+                ),
+            };
+            ops += &format!("q {to_user} cm {draw} Q\n");
         }
         wrap_contents(&mut doc, page_id, page, ops.as_bytes())?;
     }

@@ -1,6 +1,6 @@
 // Main-thread client for stamp.worker.ts.
 import type { PageSize } from "./pdf";
-import { toStampArgs, type Placement } from "./placement";
+import { toStampArgs, type Placement, type StampPlacement } from "./placement";
 
 export type WorkerRequest =
   | {
@@ -10,7 +10,7 @@ export type WorkerRequest =
       /** Image files concatenated; split by `imageLengths`. */
       images: Uint8Array;
       imageLengths: Uint32Array;
-      placements: Float64Array;
+      placements: StampPlacement[];
     }
   | { id: number; kind: "inspect"; pdf: Uint8Array };
 
@@ -62,7 +62,7 @@ export interface Inspection {
   digitallySigned: boolean;
 }
 
-/** Checks that the PDF can be signed; rejects with a user-facing message if it can't. */
+/** Checks that the PDF can be edited; rejects with a user-facing message if it can't. */
 export async function inspectPdf(pdf: Uint8Array): Promise<Inspection> {
   const copy = pdf.slice();
   const { sizes, digitallySigned } = await call({ id: nextId++, kind: "inspect", pdf: copy }, [copy.buffer]);
@@ -71,7 +71,7 @@ export async function inspectPdf(pdf: Uint8Array): Promise<Inspection> {
 }
 
 /**
- * Returns a new PDF with each placement's signature drawn on it. `images` maps
+ * Returns a new PDF with each placement drawn on it. `images` maps
  * signature ids to their PNG bytes. The inputs are not modified.
  */
 export async function stampPdf(
@@ -79,8 +79,8 @@ export async function stampPdf(
   placements: Placement[],
   images: Map<string, Uint8Array>,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  const { signatureIds, groups } = toStampArgs(placements);
-  const files = signatureIds.map((sigId) => {
+  const args = toStampArgs(placements);
+  const files = args.signatureIds.map((sigId) => {
     const bytes = images.get(sigId);
     if (!bytes) throw new Error(`Missing image for signature ${sigId}`);
     return bytes;
@@ -96,15 +96,15 @@ export async function stampPdf(
     pdf: pdf.slice(),
     images: concatenated,
     imageLengths,
-    placements: groups,
+    placements: args.placements,
   };
-  const transfer = [request.pdf.buffer, request.images.buffer, request.imageLengths.buffer, request.placements.buffer];
+  const transfer = [request.pdf.buffer, request.images.buffer, request.imageLengths.buffer];
   return (await call(request, transfer)).pdf;
 }
 
 /**
  * Whether the stamper and the viewer agree on the pages. If they don't,
- * signatures may not land where they were placed. Sizes may differ by
+ * placed items may not land where they were placed. Sizes may differ by
  * rounding (the stamper works in 32-bit floats).
  */
 export function sameLayout(viewer: PageSize[], stamper: PageSize[]): boolean {

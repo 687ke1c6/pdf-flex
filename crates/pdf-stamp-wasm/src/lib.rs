@@ -5,9 +5,6 @@
 use pdf_stamp::Placement;
 use wasm_bindgen::prelude::*;
 
-/// Numbers per placement in the flat array passed to [`stamp`].
-const FIELDS: usize = 6;
-
 /// What [`inspect`] learns about a PDF.
 #[wasm_bindgen]
 pub struct Inspection {
@@ -30,9 +27,9 @@ impl Inspection {
     }
 }
 
-/// Checks that `pdf` can be signed, without changing it.
+/// Checks that `pdf` can be edited, without changing it.
 ///
-/// Throws with a user-facing message if the PDF can't be signed (encrypted,
+/// Throws with a user-facing message if the PDF can't be edited (encrypted,
 /// damaged, …).
 #[wasm_bindgen]
 pub fn inspect(pdf: &[u8]) -> Result<Inspection, JsError> {
@@ -50,13 +47,14 @@ pub fn inspect(pdf: &[u8]) -> Result<Inspection, JsError> {
     })
 }
 
-/// Stamps images onto `pdf` and returns the new PDF bytes.
+/// Stamps placements onto `pdf` and returns the new PDF bytes.
 ///
 /// - `images`: PNG or JPEG files concatenated into one buffer.
 /// - `image_lengths`: the byte length of each image in `images`, in order.
-/// - `placements`: a flat array of `[image, page, x, y, width, height]`
-///   groups. `image` indexes the images, `page` is 1-based, the rest are
-///   display-space points from the bottom-left of the page as shown.
+/// - `placements`: an array of `{ page, x, y, width, height, item }` objects.
+///   `page` is 1-based; the rest are display-space points from the bottom-left
+///   of the page as shown. `item` is what to draw: `{ kind: "image", image }`,
+///   where `image` indexes the images.
 ///
 /// Throws on invalid input.
 #[wasm_bindgen]
@@ -64,7 +62,7 @@ pub fn stamp(
     pdf: &[u8],
     images: &[u8],
     image_lengths: &[u32],
-    placements: &[f64],
+    placements: JsValue,
 ) -> Result<Vec<u8>, JsError> {
     let total: usize = image_lengths.iter().map(|&n| n as usize).sum();
     if total != images.len() {
@@ -82,22 +80,7 @@ pub fn stamp(
         })
         .collect();
 
-    let (groups, rest) = placements.as_chunks::<FIELDS>();
-    if !rest.is_empty() {
-        return Err(JsError::new(
-            "placements must be [image, page, x, y, width, height] groups",
-        ));
-    }
-    let placements: Vec<Placement> = groups
-        .iter()
-        .map(|&[image, page, x, y, width, height]| Placement {
-            image: image as usize,
-            page: page as u32,
-            x: x as f32,
-            y: y as f32,
-            width: width as f32,
-            height: height as f32,
-        })
-        .collect();
+    let placements: Vec<Placement> = serde_wasm_bindgen::from_value(placements)
+        .map_err(|e| JsError::new(&format!("invalid placements: {e}")))?;
     Ok(pdf_stamp::stamp(pdf, &images, &placements)?)
 }

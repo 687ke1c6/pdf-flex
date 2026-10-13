@@ -4,7 +4,7 @@ import { registerSW } from "virtual:pwa-register";
 
 /**
  * Registers the service worker. A new version is never activated under the
- * user (they may be mid-signing): it waits until they choose to reload.
+ * user (they may be mid-edit): it waits until they choose to reload.
  */
 export function UpdatePrompt() {
   const [needsReload, setNeedsReload] = createSignal(false);
@@ -34,7 +34,7 @@ export function AboutDialog(props: { onClose(): void }) {
     <dialog ref={dialog} class="dialog" onClose={() => props.onClose()}>
       <h2>About pdf-flex</h2>
       <p>
-        Sign PDFs in your browser. Your PDFs and signatures stay on this device: opening, signing and saving all happen
+        Sign PDFs and add to them in your browser. Your PDFs and signatures stay on this device: opening, editing and saving all happen
         here, and nothing is uploaded. Once loaded, the app also works offline and can be installed.
       </p>
       <p>

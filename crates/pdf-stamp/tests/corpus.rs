@@ -19,7 +19,7 @@ use std::{
 };
 
 use lopdf::Document;
-use pdf_stamp::{Error, PageGeometry, Placement, inspect, load, stamp};
+use pdf_stamp::{Error, Item, PageGeometry, Placement, inspect, load, stamp};
 
 enum Expect {
     /// Stamping succeeds and the output passes every check.
@@ -111,7 +111,7 @@ fn placements(doc: &Document) -> Vec<Placement> {
         .map(|(&page, &id)| {
             let (w, h) = PageGeometry::read(doc, id).display_size();
             Placement {
-                image: 0,
+                item: Item::Image { image: 0 },
                 page,
                 x: w / 2.0 - 50.0,
                 y: h / 2.0 - 25.0,

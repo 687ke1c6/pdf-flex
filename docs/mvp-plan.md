@@ -1,4 +1,6 @@
-# pdf-flex — Plan
+# pdf-flex — MVP plan
+
+> **Frozen.** The MVP was completed on 2026-10-13. This file is kept as the record of what was built and why; the architecture, decisions and blind spots still apply. Current work is in [toolbox-plan.md](toolbox-plan.md).
 
 A web app you can install as a PWA. It opens a PDF, lets you drag your signature onto a page, move and resize it, and save the result as a new PDF.
 

@@ -55,7 +55,7 @@ function createEditor() {
   function restore(state: Placement[] | undefined) {
     if (!state) return;
     // A signature may have been deleted from the library since; its placements can't come back.
-    state = state.filter((p) => library.some((s) => s.id === p.signatureId));
+    state = state.filter((p) => p.kind !== "image" || library.some((s) => s.id === p.signatureId));
     setPlacements(state);
     if (!state.some((p) => p.id === selected())) setSelected(null);
   }
@@ -65,6 +65,7 @@ function createEditor() {
   const dirty = createMemo(() => JSON.stringify(placements) !== savedState());
 
   const signature = (id: string | null | undefined) => library.find((s) => s.id === id);
+  const usesSignature = (id: string) => placements.some((p) => p.kind === "image" && p.signatureId === id);
   /** Store records are proxies (including nested ones like a recipe), which IndexedDB can't clone. */
   const toStored = (sig: Signature): StoredSignature => {
     const { url: _url, ...stored } = unwrap(sig);
@@ -111,12 +112,12 @@ function createEditor() {
       await save(signature(id)!);
     },
 
-    isInUse: (id: string) => placements.some((p) => p.signatureId === id),
+    isInUse: usesSignature,
 
     /** Deletes a signature. Refuses (returns false) while it's placed in the open document. */
     async deleteSignature(id: string): Promise<boolean> {
       const sig = signature(id);
-      if (!sig || placements.some((p) => p.signatureId === id)) return false;
+      if (!sig || usesSignature(id)) return false;
       await signatureStore.remove(id);
       URL.revokeObjectURL(sig.url);
       setLibrary((list) => list.filter((s) => s.id !== id));
@@ -147,7 +148,7 @@ function createEditor() {
 
     /** Whether there are placements that haven't been downloaded. */
     dirty,
-    /** Call after the signed PDF has been downloaded. */
+    /** Call after the edited PDF has been downloaded. */
     markSaved() {
       setSavedState(JSON.stringify(placements));
     },
@@ -170,7 +171,7 @@ function createEditor() {
       const box = centeredAt(center ?? { x: size.width / 2, y: size.height / 2 }, width, sig.width / sig.height, size);
       const id = `p${nextPlacementId++}`;
       checkpoint();
-      setPlacements(placements.length, { id, signatureId: sig.id, page, ...box });
+      setPlacements(placements.length, { id, kind: "image", signatureId: sig.id, page, ...box });
       setSelected(id);
 
       // Remember use for ordering next session; the list doesn't reshuffle under the user now.

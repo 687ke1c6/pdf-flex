@@ -4,10 +4,9 @@
 
 import type { PageSize } from "./pdf";
 
-export interface Placement {
+/** What every placed item has: where it is. Moving, clamping and undo only use this. */
+interface PlacedBox {
   id: string;
-  /** Which saved signature is drawn here. */
-  signatureId: string;
   /** 1-based page number. */
   page: number;
   /** Bottom-left corner, in points. */
@@ -17,7 +16,17 @@ export interface Placement {
   height: number;
 }
 
-export type Box = Pick<Placement, "x" | "y" | "width" | "height">;
+/** A saved signature, drawn as an image. */
+export interface ImagePlacement extends PlacedBox {
+  kind: "image";
+  signatureId: string;
+}
+
+/** Anything placed on a page. Each kind adds what it draws. */
+export type Placement = ImagePlacement;
+export type PlacementKind = Placement["kind"];
+
+export type Box = Pick<PlacedBox, "x" | "y" | "width" | "height">;
 export interface Point {
   x: number;
   y: number;
@@ -32,6 +41,11 @@ export type Corner = "nw" | "ne" | "sw" | "se";
 
 /** Smallest width a placement can be resized to, in points. */
 export const MIN_WIDTH = 20;
+/** Smallest width or height when resizing freely, in points. */
+export const MIN_SIDE = 2;
+
+/** Whether resizing keeps the aspect ratio. Free kinds (shapes, later) lock it only with Shift. */
+export const keepsAspect = (kind: PlacementKind): boolean => kind === "image";
 
 /** Where a box appears on screen, relative to its page's top-left. */
 export function toCss(box: Box, page: PageSize, scale: number): CssBox {
@@ -99,11 +113,49 @@ export function resized(box: Box, corner: Corner, pointer: Point, page: PageSize
 }
 
 /**
- * The arguments the WASM `stamp` function takes: the distinct signatures used
- * (in image-index order) and flat `[image, page, x, y, width, height, …]` groups.
+ * Resizes by dragging `corner` to `pointer`, keeping the opposite corner fixed.
+ * Width and height change independently; the box can't flip past its anchor or leave the page.
  */
-export function toStampArgs(placements: Placement[]): { signatureIds: string[]; groups: Float64Array } {
-  const signatureIds = [...new Set(placements.map((p) => p.signatureId))];
-  const groups = placements.flatMap((p) => [signatureIds.indexOf(p.signatureId), p.page, p.x, p.y, p.width, p.height]);
-  return { signatureIds, groups: new Float64Array(groups) };
+export function resizedFree(box: Box, corner: Corner, pointer: Point, page: PageSize): Box {
+  const right = corner === "ne" || corner === "se";
+  const up = corner === "nw" || corner === "ne";
+  const anchor = { x: right ? box.x : box.x + box.width, y: up ? box.y : box.y + box.height };
+
+  const maxWidth = right ? page.width - anchor.x : anchor.x;
+  const maxHeight = up ? page.height - anchor.y : anchor.y;
+  const width = Math.min(maxWidth, Math.max(MIN_SIDE, right ? pointer.x - anchor.x : anchor.x - pointer.x));
+  const height = Math.min(maxHeight, Math.max(MIN_SIDE, up ? pointer.y - anchor.y : anchor.y - pointer.y));
+  return {
+    width,
+    height,
+    x: right ? anchor.x : anchor.x - width,
+    y: up ? anchor.y : anchor.y - height,
+  };
+}
+
+/** What a placement draws, as `pdf-stamp`'s `Item` (serde: tagged by `kind`). */
+export type StampItem = { kind: "image"; image: number };
+
+/** A placement as the WASM `stamp` function takes it: `pdf-stamp`'s `Placement`. */
+export interface StampPlacement extends Box {
+  page: number;
+  item: StampItem;
+}
+
+/**
+ * The arguments the WASM `stamp` function takes: the distinct signatures used
+ * (in image-index order) and the placements, which refer to images by index.
+ */
+export function toStampArgs(placements: Placement[]): { signatureIds: string[]; placements: StampPlacement[] } {
+  const signatureIds = [...new Set(placements.flatMap((p) => (p.kind === "image" ? [p.signatureId] : [])))];
+  const toItem = (p: Placement): StampItem => {
+    switch (p.kind) {
+      case "image":
+        return { kind: "image", image: signatureIds.indexOf(p.signatureId) };
+    }
+  };
+  return {
+    signatureIds,
+    placements: placements.map((p) => ({ page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, item: toItem(p) })),
+  };
 }

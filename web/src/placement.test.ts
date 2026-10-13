@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { centeredAt, clampToPage, moved, resized, toCss, toPoints, toStampArgs, MIN_WIDTH } from "./placement";
+import { centeredAt, clampToPage, moved, resized, resizedFree, toCss, toPoints, toStampArgs, MIN_SIDE, MIN_WIDTH } from "./placement";
 
 const LETTER = { width: 612, height: 792 };
 const box = { x: 100, y: 200, width: 150, height: 50 };
@@ -74,12 +74,36 @@ describe("resized", () => {
   });
 });
 
-test("toStampArgs lists each signature once and flattens to [image, page, x, y, width, height] groups", () => {
-  const { signatureIds, groups } = toStampArgs([
-    { id: "a", signatureId: "sig-x", page: 1, ...box },
-    { id: "b", signatureId: "sig-y", page: 3, x: 1, y: 2, width: 3, height: 4 },
-    { id: "c", signatureId: "sig-x", page: 2, x: 5, y: 6, width: 7, height: 8 },
+describe("resizedFree", () => {
+  test("width and height follow the pointer independently", () => {
+    // Dragging the south-east corner: the north-west corner (100, 250) stays put.
+    expect(resizedFree(box, "se", { x: 400, y: 150 }, LETTER)).toEqual({ x: 100, y: 150, width: 300, height: 100 });
+  });
+
+  test("dragging the north-west corner keeps the south-east corner fixed", () => {
+    expect(resizedFree(box, "nw", { x: 50, y: 400 }, LETTER)).toEqual({ x: 50, y: 200, width: 200, height: 200 });
+  });
+
+  test("can't flip past the anchor, and stops at the minimum", () => {
+    const out = resizedFree(box, "se", { x: 0, y: 1000 }, LETTER);
+    expect(out).toEqual({ x: 100, y: 250 - MIN_SIDE, width: MIN_SIDE, height: MIN_SIDE });
+  });
+
+  test("stops at the page edge", () => {
+    expect(resizedFree(box, "ne", { x: 5000, y: 5000 }, LETTER)).toEqual({ x: 100, y: 200, width: 512, height: 592 });
+  });
+});
+
+test("toStampArgs lists each signature once and refers to it by index", () => {
+  const { signatureIds, placements } = toStampArgs([
+    { id: "a", kind: "image", signatureId: "sig-x", page: 1, ...box },
+    { id: "b", kind: "image", signatureId: "sig-y", page: 3, x: 1, y: 2, width: 3, height: 4 },
+    { id: "c", kind: "image", signatureId: "sig-x", page: 2, x: 5, y: 6, width: 7, height: 8 },
   ]);
   expect(signatureIds).toEqual(["sig-x", "sig-y"]);
-  expect([...groups]).toEqual([0, 1, 100, 200, 150, 50, 1, 3, 1, 2, 3, 4, 0, 2, 5, 6, 7, 8]);
+  expect(placements).toEqual([
+    { page: 1, ...box, item: { kind: "image", image: 0 } },
+    { page: 3, x: 1, y: 2, width: 3, height: 4, item: { kind: "image", image: 1 } },
+    { page: 2, x: 5, y: 6, width: 7, height: 8, item: { kind: "image", image: 0 } },
+  ]);
 });

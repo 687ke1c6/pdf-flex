@@ -9,7 +9,7 @@ use std::io::Cursor;
 use image::{ImageFormat, Rgba, RgbaImage};
 use lopdf::{Document, Object, Stream, dictionary};
 
-use crate::{PageGeometry, Placement};
+use crate::{Item, PageGeometry, Placement};
 
 pub struct Fixture {
     pub name: &'static str,
@@ -30,7 +30,7 @@ impl Fixture {
         let (w, _) = self.geometry().display_size();
         let width = 150.0;
         Placement {
-            image: 0,
+            item: Item::Image { image: 0 },
             page: 1,
             x: w - width - 40.0,
             y: 40.0,

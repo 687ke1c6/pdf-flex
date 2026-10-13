@@ -1,5 +1,5 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { download, signedName } from "./download";
+import { download, editedName } from "./download";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
 import { openPdf, type LoadedPdf } from "./pdf";
 import { Sidebar } from "./Sidebar";
@@ -30,7 +30,7 @@ export function App() {
   let fileInput!: HTMLInputElement;
 
   async function open(name: string, bytes: Uint8Array) {
-    if (editor.dirty() && !confirm("Your placed signatures haven't been downloaded. Open another PDF and discard them?")) return;
+    if (editor.dirty() && !confirm("Your changes haven't been downloaded. Open another PDF and discard them?")) return;
     setError("");
     setLoading(true);
     try {
@@ -40,19 +40,19 @@ export function App() {
       editor.reset(pdf.pages);
       const opened = { name, bytes, pdf };
       setFile(opened);
-      // In the background: warn now, not at save time, if this PDF can't be signed.
+      // In the background: warn now, not at save time, if this PDF can't be edited.
       inspectPdf(bytes).then(
         ({ pages, digitallySigned }) => {
           if (file() !== opened) return;
           const warnings = [];
           if (digitallySigned)
-            warnings.push("This PDF is digitally signed. Adding your signature will make the existing digital signature invalid.");
+            warnings.push("This PDF is digitally signed. Saving changes to it will make the existing digital signature invalid.");
           if (!sameLayout(pdf.pages, pages))
-            warnings.push("This PDF's page layout is unusual, so signatures may not land exactly where you place them. Check the downloaded file.");
+            warnings.push("This PDF's page layout is unusual, so items may not land exactly where you place them. Check the downloaded file.");
           if (warnings.length) setError(warnings.join(" "));
         },
         (err) => {
-          if (file() === opened) setError(`You can view this PDF, but not sign it. ${err instanceof Error ? err.message : err}`);
+          if (file() === opened) setError(`You can view this PDF, but not edit it. ${err instanceof Error ? err.message : err}`);
         },
       );
     } catch (err) {
@@ -115,11 +115,12 @@ export function App() {
     setSaving(true);
     try {
       const images = new Map<string, Uint8Array>();
-      for (const { signatureId } of editor.placements) {
-        const sig = editor.signature(signatureId);
-        if (sig && !images.has(signatureId)) images.set(signatureId, new Uint8Array(await sig.png.arrayBuffer()));
+      for (const p of editor.placements) {
+        if (p.kind !== "image" || images.has(p.signatureId)) continue;
+        const sig = editor.signature(p.signatureId);
+        if (sig) images.set(p.signatureId, new Uint8Array(await sig.png.arrayBuffer()));
       }
-      download(await stampPdf(f.bytes, editor.placements, images), signedName(f.name));
+      download(await stampPdf(f.bytes, editor.placements, images), editedName(f.name));
       editor.markSaved();
     } catch (err) {
       setError(`Couldn't save: ${err instanceof Error ? err.message : err}`);

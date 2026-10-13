@@ -7,7 +7,7 @@
 
 use std::{env, fs, process};
 
-use pdf_stamp::Placement;
+use pdf_stamp::{Item, Placement};
 
 fn main() {
     if let Err(e) = run() {
@@ -47,7 +47,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         &pdf,
         &[&sig],
         &[Placement {
-            image: 0,
+            item: Item::Image { image: 0 },
             page,
             x,
             y,

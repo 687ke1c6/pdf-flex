@@ -161,7 +161,7 @@ export default defineConfig({
       manifest: {
         name: "pdf-flex",
         short_name: "pdf-flex",
-        description: "Sign PDFs in your browser. Nothing leaves your device.",
+        description: "Sign and edit PDFs in your browser. Nothing leaves your device.",
         start_url: ".",
         scope: ".",
         display: "standalone",

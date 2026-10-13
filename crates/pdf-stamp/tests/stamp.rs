@@ -1,5 +1,5 @@
 use lopdf::{Document, Object};
-use pdf_stamp::{Error, PageGeometry, Placement, stamp, testpdf};
+use pdf_stamp::{Error, Item, PageGeometry, Placement, stamp, testpdf};
 
 fn sample() -> (Vec<u8>, f32) {
     let sig = testpdf::sample_signature_png();
@@ -69,7 +69,10 @@ fn placements_on_one_page_share_one_image() {
     let (sig, aspect) = sample();
     let fixture = &testpdf::fixtures()[0];
     let target = fixture.target(aspect);
-    let second = Placement { y: 300.0, ..target };
+    let second = Placement {
+        y: 300.0,
+        ..target.clone()
+    };
     let out = stamp(
         &testpdf::build(fixture, &target),
         &[&sig],
@@ -140,7 +143,7 @@ fn different_images_on_one_page_get_separate_resources() {
     let fixture = &testpdf::fixtures()[0];
     let target = fixture.target(aspect);
     let other = Placement {
-        image: 1,
+        item: Item::Image { image: 1 },
         y: 300.0,
         ..target
     };
@@ -175,7 +178,7 @@ fn unused_images_are_not_embedded() {
     let (sig, aspect) = sample();
     let fixture = &testpdf::fixtures()[0];
     let target = Placement {
-        image: 1,
+        item: Item::Image { image: 1 },
         ..fixture.target(aspect)
     };
     let out = stamp(
@@ -192,7 +195,7 @@ fn rejects_missing_image() {
     let (sig, aspect) = sample();
     let fixture = &testpdf::fixtures()[0];
     let target = Placement {
-        image: 1,
+        item: Item::Image { image: 1 },
         ..fixture.target(aspect)
     };
     let err = stamp(&testpdf::build(fixture, &target), &[&sig], &[target]).unwrap_err();
@@ -216,22 +219,22 @@ fn rejects_invalid_placements() {
     for bad in [
         Placement {
             x: f32::NAN,
-            ..target
+            ..target.clone()
         },
         Placement {
             width: 0.0,
-            ..target
+            ..target.clone()
         },
         Placement {
             height: -5.0,
-            ..target
+            ..target.clone()
         },
         Placement {
             y: f32::INFINITY,
-            ..target
+            ..target.clone()
         },
     ] {
-        let err = stamp(&pdf, &[&sig], &[target, bad]).unwrap_err();
+        let err = stamp(&pdf, &[&sig], &[target.clone(), bad.clone()]).unwrap_err();
         assert!(
             matches!(err, Error::BadPlacement { index: 1 }),
             "{bad:?}: {err:?}"
@@ -245,11 +248,11 @@ fn rejects_unreadable_and_oversized_images() {
     let target = fixture.target(3.0);
     let pdf = testpdf::build(fixture, &target);
 
-    let err = stamp(&pdf, &[b"not an image"], &[target]).unwrap_err();
+    let err = stamp(&pdf, &[b"not an image"], std::slice::from_ref(&target)).unwrap_err();
     assert!(matches!(err, Error::BadImage(_)), "{err:?}");
 
     // The size is refused from the header, before the pixels are decoded.
-    let err = stamp(&pdf, &[&png(10_001, 1)], &[target]).unwrap_err();
+    let err = stamp(&pdf, &[&png(10_001, 1)], std::slice::from_ref(&target)).unwrap_err();
     assert!(
         matches!(
             err,
@@ -272,7 +275,7 @@ fn shared_resources_are_copied_not_edited() {
     .unwrap();
     let (sig, _) = sample();
     let target = Placement {
-        image: 0,
+        item: Item::Image { image: 0 },
         page: 1,
         x: 40.0,
         y: 40.0,
@@ -349,7 +352,7 @@ fn removes_reader_usage_rights() {
 
     let (sig, _) = sample();
     let target = Placement {
-        image: 0,
+        item: Item::Image { image: 0 },
         page: 1,
         x: 40.0,
         y: 40.0,

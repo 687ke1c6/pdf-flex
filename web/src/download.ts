@@ -7,5 +7,5 @@ export function download(bytes: Uint8Array<ArrayBuffer>, filename: string, type 
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** `report.pdf` → `report-signed.pdf` */
-export const signedName = (name: string) => `${name.replace(/\.pdf$/i, "")}-signed.pdf`;
+/** `report.pdf` → `report-edited.pdf` */
+export const editedName = (name: string) => `${name.replace(/\.pdf$/i, "")}-edited.pdf`;

@@ -1,8 +1,8 @@
 // The interactive layer over a rendered page: placed signatures you can move, resize and delete.
-import { For, Show } from "solid-js";
+import { For, Match, Show, Switch } from "solid-js";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
 import type { PageSize } from "./pdf";
-import { resized, toCss, toPoints, type Corner, type Placement, type Point } from "./placement";
+import { keepsAspect, resized, resizedFree, toCss, toPoints, type Corner, type Placement, type Point } from "./placement";
 
 interface Props {
   pageNumber: number;
@@ -127,7 +127,11 @@ function PlacementBox(props: BoxProps) {
     const layer = (e.currentTarget as HTMLElement).closest(".page-overlay")!;
     const start = { ...props.placement };
     const id = start.id;
-    track(e, (m) => editor.update(id, resized(start, corner, props.pointerOnPage(m, layer), props.size), undefined, `resize:${id}`));
+    track(e, (m) => {
+      // Free kinds keep their proportions while Shift is held.
+      const resize = keepsAspect(start.kind) || m.shiftKey ? resized : resizedFree;
+      editor.update(id, resize(start, corner, props.pointerOnPage(m, layer), props.size), undefined, `resize:${id}`);
+    });
   }
 
   return (
@@ -142,9 +146,11 @@ function PlacementBox(props: BoxProps) {
       }}
       onPointerDown={startMove}
     >
-      <Show when={editor.signature(props.placement.signatureId)}>
-        {(sig) => <img src={sig().url} alt={sig().name} draggable={false} />}
-      </Show>
+      <Switch>
+        <Match when={props.placement.kind === "image" && editor.signature(props.placement.signatureId)}>
+          {(sig) => <img src={sig().url} alt={sig().name} draggable={false} />}
+        </Match>
+      </Switch>
       <Show when={isSelected()}>
         <For each={CORNERS}>{(corner) => <div class={`handle ${corner}`} onPointerDown={(e) => startResize(e, corner)} />}</For>
         <button

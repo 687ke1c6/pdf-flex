@@ -11,7 +11,8 @@ const sig = readFileSync("out/sig.png");
 // The rotate-90 fixture's target box: displayed 792 pt wide, box 150 x 50 at (602, 40).
 const lengths = new Uint32Array([sig.length]);
 const started = performance.now();
-const out = stamp(pdf, sig, lengths, new Float64Array([0, 1, 602, 40, 150, 50]));
+const image = { kind: "image", image: 0 };
+const out = stamp(pdf, sig, lengths, [{ page: 1, x: 602, y: 40, width: 150, height: 50, item: image }]);
 console.log(`stamped in ${(performance.now() - started).toFixed(1)} ms -> ${out.length} bytes`);
 writeFileSync("out/wasm-smoke.pdf", out);
 
@@ -25,7 +26,8 @@ function expectError(what: string, f: () => unknown): string {
   throw new Error(`expected an error for ${what}`);
 }
 
-console.log(`error path ok: ${expectError("a missing page", () => stamp(pdf, sig, lengths, new Float64Array([0, 9, 0, 0, 10, 10])))}`);
+console.log(`error path ok: ${expectError("a missing page", () => stamp(pdf, sig, lengths, [{ page: 9, x: 0, y: 0, width: 10, height: 10, item: image }]))}`);
+console.log(`bad input ok: ${expectError("an unknown kind", () => stamp(pdf, sig, lengths, [{ page: 1, x: 0, y: 0, width: 10, height: 10, item: { kind: "video" } }]))}`);
 
 const inspection = inspect(pdf);
 const sizes = inspection.sizes.join();
