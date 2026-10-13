@@ -1,9 +1,9 @@
 // Settings: everything about the app itself rather than a document. Opened
 // from the status bar. One section per topic, so more can be added.
-import { createSignal, onMount } from "solid-js";
+import { onMount } from "solid-js";
 import { draftsEnabled, setDraftsEnabled } from "./autosave";
-import { draftStore } from "./draftStore";
 import { tabsMode } from "./tabs";
+import { darkMode, setDarkMode } from "./theme";
 
 /** The cog wheel, for the Settings button. */
 export const CogIcon = () => (
@@ -13,26 +13,60 @@ export const CogIcon = () => (
   </svg>
 );
 
+const SunIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" class="sun">
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" />
+  </svg>
+);
+
+const MoonIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" class="moon">
+    <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
+  </svg>
+);
+
 export function SettingsDialog(props: {
   onClose(): void;
-  onDraftsDeleted(): void;
   /** Turns tab mode on or off; resolves to whether it changed (turning off can be cancelled). */
   onTabsMode(on: boolean): Promise<boolean>;
 }) {
   let dialog!: HTMLDialogElement;
   onMount(() => dialog.showModal());
-  const [deleted, setDeleted] = createSignal(false);
 
-  async function deleteAllDrafts() {
-    if (!confirm("Delete every draft kept in this browser? This can't be undone.")) return;
-    await draftStore.clear();
-    props.onDraftsDeleted();
-    setDeleted(true);
-  }
+  // A click on the backdrop closes it. Clicks there land on the dialog itself, so it's told apart by
+  // position; the press has to start outside too, so selecting text and letting go outside doesn't close it.
+  const outside = (e: MouseEvent) => {
+    if (e.target !== dialog) return false;
+    const r = dialog.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  let downOutside = false;
 
   return (
-    <dialog ref={dialog} class="dialog settings" onClose={() => props.onClose()}>
+    <dialog
+      ref={dialog}
+      class="dialog settings"
+      onClose={() => props.onClose()}
+      onPointerDown={(e) => (downOutside = outside(e))}
+      onClick={(e) => {
+        if (downOutside && outside(e)) dialog.close();
+      }}
+    >
       <h2>Settings</h2>
+
+      <section>
+        <h3>Appearance</h3>
+        <label class="row">
+          {/* A sun/moon switch: the knob slides over to the theme in use and shows its icon. */}
+          <button type="button" role="switch" class="theme-switch" aria-checked={darkMode()} onClick={() => setDarkMode(!darkMode())}>
+            <SunIcon />
+            <MoonIcon />
+            <span class="theme-knob">{darkMode() ? <MoonIcon /> : <SunIcon />}</span>
+          </button>
+          Dark mode
+        </label>
+      </section>
 
       <section>
         <h3>Tabs</h3>
@@ -64,11 +98,6 @@ export function SettingsDialog(props: {
           <input type="checkbox" checked={draftsEnabled()} onChange={(e) => setDraftsEnabled(e.currentTarget.checked)} />
           Keep drafts of my work in this browser
         </label>
-        <div class="row">
-          <button onClick={deleteAllDrafts} disabled={deleted()}>
-            {deleted() ? "All drafts deleted" : "Delete all drafts"}
-          </button>
-        </div>
       </section>
 
       <section>

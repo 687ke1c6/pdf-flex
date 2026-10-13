@@ -1,6 +1,7 @@
 import { batch, createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { documentId } from "./db";
 import { download } from "./download";
+import { ConfirmHost, askConfirm } from "./ConfirmDialog";
 import { DownloadButton, DownloadDialog } from "./DownloadDialog";
 import { draftStore, formatSavedAt, usablePlacements, type Draft } from "./draftStore";
 import { createDocState, SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
@@ -136,7 +137,16 @@ export function App() {
       const here = activeTab();
       const replacing = !tabsMode() && here && !isEmptyTab(here) ? here : undefined;
       const old = replacing?.session;
-      if (old?.atRisk() && !confirm(`Your changes to ${old.name} haven't been downloaded or saved as a draft. Open ${name} instead?`)) return;
+      if (
+        old?.atRisk() &&
+        !(await askConfirm({
+          title: "Replace document?",
+          message: `Your changes to ${old.name} haven't been downloaded or saved as a draft. Open ${name} instead?`,
+          confirm: `Open ${name}`,
+          danger: true,
+        }))
+      )
+        return;
       await old?.autosave.flush();
       const session = await sessionFor(id, name, bytes, resume);
       const tab = docTab(session);
@@ -198,7 +208,16 @@ export function App() {
     const tab = list[at];
     if (!tab) return;
     const session = tab.session;
-    if (session?.atRisk() && !confirm(`Your changes to ${session.name} haven't been downloaded or saved as a draft. Close it anyway?`)) return;
+    if (
+      session?.atRisk() &&
+      !(await askConfirm({
+        title: "Close document?",
+        message: `Your changes to ${session.name} haven't been downloaded or saved as a draft. Close it anyway?`,
+        confirm: "Close",
+        danger: true,
+      }))
+    )
+      return;
     await session?.autosave.flush();
     session?.dispose();
     // The empty tab is the start screen: with no documents open, it stays.
@@ -231,7 +250,15 @@ export function App() {
     }
     const others = tabs().filter((t) => t.key !== activeKey() && !isEmptyTab(t));
     const risky = others.flatMap((t) => (t.session?.atRisk() ? [t.session.name] : []));
-    if (risky.length && !confirm(`Turning tabs off closes the other documents. Changes to ${risky.join(", ")} haven't been saved yet. Close them anyway?`))
+    if (
+      risky.length &&
+      !(await askConfirm({
+        title: "Turn off tabs?",
+        message: `Turning tabs off closes the other documents. Changes to ${risky.join(", ")} haven't been saved yet. Close them anyway?`,
+        confirm: "Close them",
+        danger: true,
+      }))
+    )
       return false;
     for (const t of others) {
       await t.session?.autosave.flush();
@@ -563,7 +590,6 @@ export function App() {
       <Show when={settings()}>
         <SettingsDialog
           onClose={() => setSettings(false)}
-          onDraftsDeleted={() => sessions().forEach((s) => s.autosave.forget())}
           onTabsMode={changeTabsMode}
         />
       </Show>
@@ -617,11 +643,16 @@ export function App() {
             fallback={
               <Show when={!activeTab()?.pending}>
                 <div class="empty">
-                  <p>Open a PDF to get started.</p>
-                  <button class="primary" title="Open PDF (Ctrl O)" onClick={() => fileInput.click()}>
-                    Open PDF…
-                  </button>
-                  <p class="hint">or drop files anywhere in this window</p>
+                  {/* The whole zone opens the picker; the button's click reaches it too. */}
+                  <div class="drop-zone" classList={{ over: dragging() }} onClick={() => fileInput.click()}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+                    </svg>
+                    <button class="primary" title="Open PDF (Ctrl O)">
+                      Open PDF…
+                    </button>
+                    <span class="drop-label">{dragging() ? "Drop to open" : "or drag PDFs here"}</span>
+                  </div>
                   <p class="hint">Your files stay on this device. Nothing is uploaded.</p>
                   <RecentDrafts
                     openIds={tabs().flatMap((t) => tabDocId(t) ?? [])}
@@ -647,7 +678,8 @@ export function App() {
           <Show when={loading()}>
             <div class="overlay">Opening…</div>
           </Show>
-          <Show when={dragging()}>
+          {/* The empty tab's drop zone lights up itself instead. */}
+          <Show when={dragging() && (active() || activeTab()?.pending)}>
             <div class="overlay drop">Drop to open</div>
           </Show>
         </main>
@@ -695,6 +727,7 @@ export function App() {
           </Show>
         }
       />
+      <ConfirmHost />
     </div>
   );
 }

@@ -123,15 +123,6 @@ export function createAutosave(source: Source) {
     },
     /** Whether everything on the open document is in its draft. */
     upToDate: () => draftsEnabled() && !timer && state().status !== "error" && source.version() === saved,
-    /** Call after drafts are deleted: the open document's draft has to be written again from scratch. */
-    forget() {
-      const doc = source.doc();
-      if (doc) doc.fileSaved = false;
-      clearTimeout(timer);
-      timer = undefined;
-      saved = "";
-      setState({ status: "idle" });
-    },
   };
 }
 

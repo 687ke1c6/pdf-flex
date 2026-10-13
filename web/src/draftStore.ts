@@ -83,12 +83,6 @@ export const draftStore = {
       tx.objectStore("drafts").delete(id);
       tx.objectStore("draftFiles").delete(id);
     }),
-
-  clear: () =>
-    runAll(["drafts", "draftFiles"], (tx) => {
-      tx.objectStore("drafts").clear();
-      tx.objectStore("draftFiles").clear();
-    }),
 };
 
 /** "14:32" today, "Yesterday 14:32", or a date, for when a draft was saved. */

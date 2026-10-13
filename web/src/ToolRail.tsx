@@ -1,7 +1,7 @@
 // Tools: exactly one is active, and it decides what a click on the page does.
 // Select and Hand have no settings; the others have a panel, opened from the
 // rail on the far left.
-import { For, type JSX } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, onMount, type JSX } from "solid-js";
 
 export type PanelTool = "signatures" | "text" | "shapes";
 export type Tool = "select" | "hand" | PanelTool;
@@ -101,7 +101,45 @@ export function ToolRail(props: Props) {
 }
 
 /** Select, Hand, and the last panel tool used, floating at the bottom of the document. Icons only. */
+/** How long the quick bar stays up after the mouse last moved. */
+const QUICK_BAR_IDLE_MS = 3000;
+
+/**
+ * Slides away once the mouse has been still for a while, and back when it moves. Scrolling with the
+ * wheel doesn't bring it back, so reading the document leaves the page clear. It stays while the
+ * pointer is on it or one of its buttons has keyboard focus, and comes back when the tool changes.
+ */
 export function QuickBar(props: { active: Tool; last: PanelTool; onSelect(tool: Tool): void }) {
+  const [shown, setShown] = createSignal(true);
+  let hovered = false;
+  let focused = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const wake = () => {
+    setShown(true);
+    clearTimeout(timer);
+    if (!hovered && !focused) timer = setTimeout(() => setShown(false), QUICK_BAR_IDLE_MS);
+  };
+  // After a wheel scroll the browser sends a mousemove with the pointer where it was; only a real move counts.
+  let lastX = NaN;
+  let lastY = NaN;
+  const onMove = (e: PointerEvent) => {
+    if (e.screenX === lastX && e.screenY === lastY) return;
+    lastX = e.screenX;
+    lastY = e.screenY;
+    wake();
+  };
+  onMount(() => {
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerdown", wake);
+    wake();
+  });
+  onCleanup(() => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerdown", wake);
+    clearTimeout(timer);
+  });
+  createEffect(on(() => props.active, wake, { defer: true }));
+
   const button = (tool: Tool) => (
     <button
       classList={{ active: props.active === tool }}
@@ -114,7 +152,29 @@ export function QuickBar(props: { active: Tool; last: PanelTool; onSelect(tool: 
     </button>
   );
   return (
-    <div class="quick-bar" role="toolbar" aria-label="Quick tools">
+    <div
+      class="quick-bar"
+      classList={{ hidden: !shown() }}
+      role="toolbar"
+      aria-label="Quick tools"
+      onPointerEnter={() => {
+        hovered = true;
+        wake();
+      }}
+      onPointerLeave={() => {
+        hovered = false;
+        wake();
+      }}
+      // Only keyboard focus keeps it up: a clicked button keeps focus too, and a click on the page doesn't take it away.
+      onFocusIn={(e) => {
+        focused = e.target.matches(":focus-visible");
+        wake();
+      }}
+      onFocusOut={() => {
+        focused = false;
+        wake();
+      }}
+    >
       {button("select")}
       {button("hand")}
       <span class="separator" aria-hidden="true" />

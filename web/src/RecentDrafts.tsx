@@ -1,5 +1,6 @@
 // Drafts kept in this browser, listed on the empty screen to pick up where you left off.
 import { createResource, For, Show } from "solid-js";
+import { askConfirm } from "./ConfirmDialog";
 import { draftStore, formatSavedAt, formatSize, type DraftSummary } from "./draftStore";
 
 interface Props {
@@ -18,7 +19,13 @@ export function RecentDrafts(props: Props) {
   );
 
   async function discard(draft: DraftSummary) {
-    if (!confirm(`Discard your work on ${draft.name}? This can't be undone.`)) return;
+    const ok = await askConfirm({
+      title: "Discard draft?",
+      message: `Your work on ${draft.name} will be deleted from this browser. This can't be undone.`,
+      confirm: "Discard",
+      danger: true,
+    });
+    if (!ok) return;
     await draftStore.remove(draft.id);
     await refetch();
   }
