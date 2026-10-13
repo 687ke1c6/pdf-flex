@@ -1,8 +1,9 @@
 // The bar along the bottom: how many items are placed (click for the list),
 // whether they've been downloaded, and a hint for what you can do next.
-import { createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
+import { createSignal, For, Match, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { draftsEnabled, type AutosaveState } from "./autosave";
 import { formatSavedAt } from "./draftStore";
+import { CogIcon } from "./SettingsDialog";
 import { useEditor } from "./editor";
 import type { Placement } from "./placement";
 import { isSymbol, type ShapeKind } from "./shapes";
@@ -28,8 +29,13 @@ const DRAW_HINTS: Record<ShapeKind, string> = {
 };
 
 interface Props {
+  /** A document is open in the tab in front; without one, the bar only offers Settings. */
+  hasDocument: boolean;
   onGoToPage(page: number): void;
-  autosave: AutosaveState;
+  autosave?: AutosaveState;
+  onSettings(): void;
+  /** The document's page and zoom controls, shown on the right, before Settings. */
+  controls?: JSX.Element;
 }
 
 export function StatusBar(props: Props) {
@@ -90,29 +96,40 @@ export function StatusBar(props: Props) {
 
   return (
     <footer class="status-bar" ref={bar}>
-      <button
-        class="status-items"
-        classList={{ open: listOpen() }}
-        aria-expanded={listOpen()}
-        onClick={() => setListOpen((o) => !o)}
-      >
-        {count()} {count() === 1 ? "item" : "items"} <span aria-hidden="true">{listOpen() ? "▾" : "▴"}</span>
-      </button>
-      <Show
-        when={draftsEnabled()}
-        fallback={
-          <Show when={editor.dirty()} fallback={<Show when={count()}><span class="status-saved">Downloaded</span></Show>}>
-            <span class="status-unsaved">Unsaved changes</span>
+      <Show when={props.hasDocument}>
+        <button
+          class="status-items"
+          classList={{ open: listOpen() }}
+          aria-expanded={listOpen()}
+          onClick={() => setListOpen((o) => !o)}
+        >
+          {count()} {count() === 1 ? "item" : "items"} <span aria-hidden="true">{listOpen() ? "▾" : "▴"}</span>
+        </button>
+        <Show
+          when={draftsEnabled()}
+          fallback={
+            <Show when={editor.dirty()} fallback={<Show when={count()}><span class="status-saved">Downloaded</span></Show>}>
+              <span class="status-unsaved">Unsaved changes</span>
+            </Show>
+          }
+        >
+          <Show when={props.autosave}>{(state) => <DraftStatus state={state()} />}</Show>
+          <Show when={!editor.dirty() && count()}>
+            <span class="status-saved">Downloaded</span>
           </Show>
-        }
-      >
-        <DraftStatus state={props.autosave} />
-        <Show when={!editor.dirty() && count()}>
-          <span class="status-saved">Downloaded</span>
         </Show>
       </Show>
       <span class="spacer" />
-      <span class="status-hint">{hint()}</span>
+      <Show when={props.hasDocument}>
+        <span class="status-hint">{hint()}</span>
+        <span class="status-separator" aria-hidden="true" />
+        {props.controls}
+        <span class="status-separator" aria-hidden="true" />
+      </Show>
+      <button class="status-settings" title="Settings" onClick={() => props.onSettings()}>
+        <CogIcon />
+        <span>Settings</span>
+      </button>
 
       <Show when={listOpen()}>
         <div class="status-popover" role="dialog" aria-label="On this document">

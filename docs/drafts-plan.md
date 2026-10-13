@@ -28,7 +28,7 @@ The ground rules from [mvp-plan.md](mvp-plan.md) and [toolbox-plan.md](toolbox-p
 | 2 | What's in a draft? | The original PDF (a Blob), its name, the placements, a copy of each signature image used, and timestamps. Not the undo history |
 | 3 | When is it saved? | 1 s after the last change (typing included, not only finished edits), and immediately when the tab is hidden or closed |
 | 4 | When is it deleted? | Only when the user discards it. A download doesn't end a draft: you may keep working |
-| 5 | Drafts on by default? | **On**, with a visible "Saved in this browser" status and an off switch in About, since PDFs (often personal) now stay in browser storage on this device |
+| 5 | Drafts on by default? | **On**, with a visible "Saved in this browser" status and an off switch in Settings, since PDFs (often personal) now stay in browser storage on this device |
 | 6 | Old drafts | **Kept until discarded**; the Recent list shows their age and size |
 | 8 | Scope | **Option A (chunks 1–3) now.** B and C stay in the plan for later |
 | 7 | Signatures deleted from the library | A draft keeps its own copy of each signature it uses, so it always restores. On restore, a missing signature is added back to the library |
@@ -73,7 +73,7 @@ The ground rules from [mvp-plan.md](mvp-plan.md) and [toolbox-plan.md](toolbox-p
 - **Leaving:** the close-tab and open-another warnings now only appear when work isn't safely in a draft (drafts off, a save failed, or the last second of changes isn't written yet).
 - **Status bar:** "Saving…", "Saved in this browser · 14:32", or "Couldn't save a draft: …"; "Downloaded" alongside once downloaded. With drafts off, it shows Unsaved changes / Downloaded as before.
 - **Empty screen:** "Continue where you left off": each draft's name, items, pages, size and when it was saved; click to open it straight from storage (restored without asking); × to discard, after confirming.
-- **About:** what drafts are and where they live, **Keep drafts of my work in this browser** (on), and **Delete all drafts**.
+- **About** (now **Settings**, the cog in the status bar): what drafts are and where they live, **Keep drafts of my work in this browser** (on), and **Delete all drafts**.
 - **Tests:** 5 new (document identity, summaries, unknown kinds, time and size formats): 67 web tests. The database upgrade and the save timing run in the browser only, so they're in your checks rather than automated (no IndexedDB in `bun test` without adding `fake-indexeddb`).
 - **Known limits:** the drafts list is only on the empty screen (reload, or open the file, to get back to another draft). Two tabs on the same document both save to its draft; the last write wins.
 - **Your checks:**
@@ -81,7 +81,7 @@ The ground rules from [mvp-plan.md](mvp-plan.md) and [toolbox-plan.md](toolbox-p
   2. Place a few items of each kind, wait a second (status: Saved in this browser), close the tab: no warning. Reopen the app: the draft is listed; click it and everything is back, including text mid-edit if you closed while typing.
   3. Open the same PDF with Open PDF… instead: the Restore banner appears. Try Restore, and Start over.
   4. With a draft that uses a signature, open a different PDF and delete that signature from the library there. Then open the draft: the signature is back in the library and on the page.
-  5. Discard a draft from the list; in About, delete all drafts; turn drafts off and check the old warnings come back.
+  5. Discard a draft from the list; in Settings, delete all drafts; turn drafts off and check the old warnings come back.
 
 ### Chunk 4: Project file
 - **Save project** (top bar, next to Download) writes `<name>.pdfflex`: JSON with the original PDF and signature PNGs base64-encoded, the placements, and a format name and version (like the signature library export). Base64 adds about a third to the size; acceptable for documents of a few MB.

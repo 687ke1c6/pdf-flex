@@ -6,13 +6,6 @@ import solid from "vite-plugin-solid";
 
 const PDFJS_DIR = resolve(import.meta.dirname, "node_modules/pdfjs-dist");
 const PDFJS_ASSETS = ["cmaps", "standard_fonts", "wasm", "iccs"];
-/** Dev-only Samples menu: test PDFs, by the name shown in the menu. */
-const SAMPLE_ROOTS: Record<string, string> = {
-  out: resolve(import.meta.dirname, "../out"),
-  corpus: resolve(import.meta.dirname, "../crates/pdf-stamp/tests/corpus"),
-  // Written by the corpus test (`cargo test`): every corpus file with a black box stamped on each page.
-  "corpus-stamped": resolve(import.meta.dirname, "../target/tmp/corpus"),
-};
 /** Built by `just wasm`. */
 const WASM_PKG = resolve(import.meta.dirname, "../crates/pdf-stamp-wasm/pkg");
 
@@ -56,37 +49,6 @@ function pdfjsAssets(): Plugin {
       for (const dir of PDFJS_ASSETS) {
         cpSync(join(PDFJS_DIR, dir), join(outDir, "pdfjs", dir), { recursive: true });
       }
-    },
-  };
-}
-
-/** All PDFs under `dir`, as paths relative to it. */
-function listPdfs(dir: string, prefix = ""): string[] {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-    e.isDirectory()
-      ? listPdfs(join(dir, e.name), `${prefix}${e.name}/`)
-      : e.name.endsWith(".pdf")
-        ? [`${prefix}${e.name}`]
-        : [],
-  );
-}
-
-/**
- * Dev only: serves test PDFs as /samples/<root>/<path>, listed at
- * /samples/index.json, for the Samples menu. Roots are in SAMPLE_ROOTS.
- */
-function devSamples(): Plugin {
-  return {
-    name: "dev-samples",
-    apply: "serve",
-    configureServer(server) {
-      server.middlewares.use("/samples/index.json", (_req, res) => {
-        const all = Object.entries(SAMPLE_ROOTS).flatMap(([name, dir]) => listPdfs(dir).sort().map((f) => `${name}/${f}`));
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify(all));
-      });
-      for (const [name, dir] of Object.entries(SAMPLE_ROOTS)) server.middlewares.use(serveDir(`/samples/${name}/`, dir));
     },
   };
 }
@@ -163,7 +125,6 @@ export default defineConfig({
   plugins: [
     solid(),
     pdfjsAssets(),
-    devSamples(),
     licenses(),
     VitePWA({
       // A new version waits until the user chooses to reload (see UpdatePrompt).

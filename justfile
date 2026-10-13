@@ -61,7 +61,7 @@ demo: fixtures wasm
     echo "Serving on http://localhost:5173 (Ctrl+C to stop)"
     python3 -m http.server 5172 --bind 0.0.0.0 --directory $d
 
-# Run the web app dev server on http://localhost:5173 (dev-only Samples menu lists out/)
+# Run the web app dev server on http://localhost:5173
 dev: fixtures wasm
     cd web && bun install --frozen-lockfile && bun run dev
 

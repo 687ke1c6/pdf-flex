@@ -14,12 +14,22 @@ export interface ViewerApi {
   fitWidth(): void;
 }
 
+/** Where a document was scrolled to, in CSS px at its zoom. */
+export interface ScrollPosition {
+  top: number;
+  left: number;
+}
+
 interface Props {
   pdf: LoadedPdf;
   zoom: number;
   onZoom(zoom: number): void;
   onPageChange(page: number): void;
   api(api: ViewerApi): void;
+  /** Coming back to a document (e.g. switching tabs): where it was left, at its current zoom. */
+  scroll?: ScrollPosition;
+  /** Called when the viewer goes away, with where it was scrolled to. */
+  onLeave?(scroll: ScrollPosition): void;
 }
 
 /** A point in the document to hold still across a zoom: page, fraction within it, and where it sits on screen. */
@@ -196,6 +206,7 @@ export function Viewer(props: Props) {
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
     onCleanup(() => {
+      props.onLeave?.({ top: scroller.scrollTop, left: scroller.scrollLeft });
       scroller.removeEventListener("pointerdown", onPanStart, { capture: true });
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
@@ -211,8 +222,15 @@ export function Viewer(props: Props) {
       },
       fitWidth,
     });
-    // Every document opens at actual size (100%), whatever the previous one was zoomed to.
-    props.onZoom(1);
+    // A document coming back is shown where it was left (its zoom is already in place);
+    // a newly opened one starts at actual size (100%).
+    const back = props.scroll;
+    if (back) {
+      requestAnimationFrame(() => {
+        scroller.scrollTop = back.top;
+        scroller.scrollLeft = back.left;
+      });
+    } else props.onZoom(1);
   });
 
   return (

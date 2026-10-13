@@ -1,8 +1,8 @@
 // Editing state: the active tool, the signature library, what's placed where, what's selected, and text being edited.
-import { createContext, createMemo, createSignal, useContext, type ParentProps } from "solid-js";
-import { createStore, unwrap } from "solid-js/store";
+import { createContext, createSignal, useContext, type ParentProps } from "solid-js";
+import { createStore, unwrap, type SetStoreFunction } from "solid-js/store";
+import { createDocState, isDirty, snapshotOf, type DocState } from "./docState";
 import type { PageSize } from "./pdf";
-import { createHistory } from "./history";
 import {
   centeredAt,
   clampToPage,
@@ -78,20 +78,21 @@ const SHAPE_TOOL_KEY = "pdf-flex:shape-tool";
 const TEXT_STYLE_KEY = "pdf-flex:text-style";
 const DEFAULT_TEXT_STYLE: TextStyle = { family: "Helvetica", bold: false, italic: false, size: 12, color: "#000000", align: "left" };
 
-/** An in-place text edit in progress. It becomes one undo step when it ends. */
-interface EditSession {
-  id: string;
-  /** The placements before the edit (before the box was added, if it's new). */
-  before: Placement[];
-  isNew: boolean;
-}
 
 function createEditor() {
   const [library, setLibrary] = createStore<Signature[]>([]);
   const [activeId, setActiveId] = createSignal<string | null>(null);
-  const [placements, setPlacements] = createStore<Placement[]>([]);
-  /** The selected placements' ids, in the order they were selected. */
-  const [selection, setSelection] = createSignal<string[]>([]);
+  /** The document being worked on: everything per-document below acts on it. */
+  const [doc, setDoc] = createSignal<DocState>(createDocState([]));
+  const selection = () => doc().selection();
+  const setSelection = (v: string[] | ((prev: string[]) => string[])) => doc().setSelection(v);
+  const editing = () => doc().editing();
+  const setEditing = (id: string | null) => doc().setEditing(id);
+  const setPlacements: SetStoreFunction<Placement[]> = ((...args: unknown[]) =>
+    (doc().setPlacements as (...a: unknown[]) => void)(...args)) as SetStoreFunction<Placement[]>;
+  /** The active document's page sizes. */
+  const pageAt = (page: number): PageSize | undefined => doc().pages[page - 1];
+  const nextId = () => `p${doc().nextPlacementId++}`;
   /** The selected placement when exactly one is: what handles, style panels and editing act on. */
   const selected = () => {
     const ids = selection();
@@ -111,22 +112,14 @@ function createEditor() {
   const [lastPanelTool, setLastPanelTool] = createSignal<PanelTool>(isPanelTool(tool()) ? (tool() as PanelTool) : savedPanelTool());
   const [creatingSignature, setCreatingSignature] = createSignal(false);
   const [textStyle, setTextStyleSignal] = createSignal<TextStyle>(load(TEXT_STYLE_KEY, DEFAULT_TEXT_STYLE));
-  const [editing, setEditing] = createSignal<string | null>(null);
   const [shapeStyle, setShapeStyleSignal] = createSignal<ShapeStyle>(load(SHAPE_STYLE_KEY, DEFAULT_SHAPE_STYLE));
   const savedShape = load<string>(SHAPE_TOOL_KEY, "rect");
   const [shapeTool, setShapeToolSignal] = createSignal<ShapeKind>(
     SHAPE_KINDS.find((k) => k === savedShape) ?? "rect",
   );
-  let session: EditSession | undefined;
-  let pages: PageSize[] = [];
-  let nextPlacementId = 0;
-
-  // Undo/redo over the placements. The version signal makes canUndo/canRedo reactive.
-  const [historyVersion, setHistoryVersion] = createSignal(0);
-  const history = createHistory<Placement[]>(() => setHistoryVersion((v) => v + 1));
-  const snapshot = () => unwrap(placements).map((p) => ({ ...p }));
+  const snapshot = () => snapshotOf(doc());
   /** Call before every change to the placements. `tag` merges a run of changes into one undo step. */
-  const checkpoint = (tag?: string) => history.checkpoint(snapshot(), tag);
+  const checkpoint = (tag?: string) => doc().history.checkpoint(snapshot(), tag);
   function restore(state: Placement[] | undefined) {
     if (!state) return;
     endEdit();
@@ -136,12 +129,8 @@ function createEditor() {
     setSelection((ids) => ids.filter((id) => state!.some((p) => p.id === id)));
   }
 
-  // Unsaved changes: the placements differ from those at the last download (or open).
-  const [savedState, setSavedState] = createSignal("[]");
-  const dirty = createMemo(() => JSON.stringify(placements) !== savedState());
-
   const signature = (id: string | null | undefined) => library.find((s) => s.id === id);
-  const usesSignature = (id: string) => placements.some((p) => p.kind === "image" && p.signatureId === id);
+  const usesSignature = (id: string) => doc().placements.some((p) => p.kind === "image" && p.signatureId === id);
   /** Store records are proxies (including nested ones like a recipe), which IndexedDB can't clone. */
   const toStored = (sig: Signature): StoredSignature => {
     const { url: _url, ...stored } = unwrap(sig);
@@ -150,30 +139,31 @@ function createEditor() {
   const save = (sig: Signature) => signatureStore.put(toStored(sig));
 
   const shapePlacement = (id: string | null | undefined) =>
-    placements.find((p): p is ShapePlacement => p.id === id && p.kind === "shape");
+    doc().placements.find((p): p is ShapePlacement => p.id === id && p.kind === "shape");
 
   /** Sets a shape's box (and a line's ends), kept on its page. */
   function setGeometry(p: ShapePlacement, box: Box, ends?: [Point, Point]) {
-    const size = pages[p.page - 1];
+    const size = pageAt(p.page);
     const placed = size ? (ends ? keptOnPage(box, size) : clampToPage(box, size)) : box;
     setPlacements((q) => q.id === p.id, { ...placed, ...(ends ? { ends } : {}) });
   }
 
   const textPlacement = (id: string | null | undefined) =>
-    placements.find((p): p is TextPlacement => p.id === id && p.kind === "text");
+    doc().placements.find((p): p is TextPlacement => p.id === id && p.kind === "text");
 
   /** Changes a text placement's text or style, re-laying it out with `anchor` fixed. */
   function setText(p: TextPlacement, text: string, style: TextStyle, anchor: Corner = "nw") {
-    const size = pages[p.page - 1];
+    const size = pageAt(p.page);
     const box = relaidOut(p, text, style, anchor);
     setPlacements((q) => q.id === p.id, { text, style, ...(size ? keptOnPage(box, size) : box) });
   }
 
   /** Ends the in-place edit, if any: empty text is removed, and a change becomes one undo step. */
   function endEdit() {
-    const current = session;
+    const d = doc();
+    const current = d.session;
     if (!current) return;
-    session = undefined;
+    d.session = undefined;
     setEditing(null);
     const p = textPlacement(current.id);
     if (!p) return;
@@ -182,7 +172,7 @@ function createEditor() {
     const changed = current.isNew
       ? !empty
       : before?.text !== p.text || JSON.stringify(before.style) !== JSON.stringify(p.style);
-    if (changed || (empty && !current.isNew)) history.checkpoint(current.before);
+    if (changed || (empty && !current.isNew)) d.history.checkpoint(current.before);
     if (empty) {
       setPlacements((list) => list.filter((q) => q.id !== p.id));
       deselect(p.id);
@@ -190,17 +180,17 @@ function createEditor() {
   }
 
   const boxesOf = (ids: string[]): GroupBox[] =>
-    placements.filter((p) => ids.includes(p.id)).map(({ id, page, x, y, width, height }) => ({ id, page, x, y, width, height }));
+    doc().placements.filter((p) => ids.includes(p.id)).map(({ id, page, x, y, width, height }) => ({ id, page, x, y, width, height }));
 
   /**
    * Moves boxes together by the same (dx, dy), each on its own page. The move
    * is limited so that none of them leaves its page, keeping their arrangement.
    */
   function moveGroup(starts: GroupBox[], dx: number, dy: number, tag?: string) {
-    const limited = limitGroupMove(starts, dx, dy, (page) => pages[page - 1]);
+    const limited = limitGroupMove(starts, dx, dy, (page) => pageAt(page));
     if (!limited) return;
     const moves = starts.filter((b) => {
-      const p = placements.find((q) => q.id === b.id);
+      const p = doc().placements.find((q) => q.id === b.id);
       return p && (p.x !== b.x + limited.dx || p.y !== b.y + limited.dy);
     });
     if (!moves.length) return;
@@ -225,7 +215,10 @@ function createEditor() {
     /** The signature that "Place on page" and new drags use. */
     active: () => signature(activeId()),
     setActive: setActiveId,
-    placements,
+    /** The active document's placements. */
+    get placements() {
+      return doc().placements;
+    },
     selected,
     select,
 
@@ -270,14 +263,14 @@ function createEditor() {
      * continues the same undo step, until `endChange`.
      */
     addShape(page: number, geometry: { box: Box; ends?: [Point, Point] }): string | undefined {
-      const size = pages[page - 1];
+      const size = pageAt(page);
       if (!size) return;
       endEdit();
-      const id = `p${nextPlacementId++}`;
+      const id = nextId();
       checkpoint(`draw:${id}`);
       const p: ShapePlacement = { id, kind: "shape", shape: shapeTool(), style: shapeStyle(), page, ...geometry.box };
       if (geometry.ends) p.ends = geometry.ends;
-      setPlacements(placements.length, p);
+      setPlacements(doc().placements.length, p);
       setGeometry(p, geometry.box, geometry.ends);
       setSelected(id);
       return id;
@@ -369,11 +362,20 @@ function createEditor() {
 
     exportLibrary: () => exportSignatures(library.map(toStored)),
 
-    /** A plain copy of the placements, for saving. */
-    placementsSnapshot: snapshot,
-    /** The signatures the placements use, as stored records. */
-    usedSignatures(): StoredSignature[] {
-      const ids = new Set(placements.flatMap((p) => (p.kind === "image" ? [p.signatureId] : [])));
+    /** The document being worked on. */
+    doc,
+    /**
+     * Makes `d` the document being worked on. An edit in progress on the
+     * previous one is finished first, so it lands in its own undo history.
+     */
+    activate(d: DocState) {
+      if (d === doc()) return;
+      endEdit();
+      setDoc(d);
+    },
+    /** The signatures a document's placements use, as stored records. */
+    usedSignatures(d: DocState = doc()): StoredSignature[] {
+      const ids = new Set(d.placements.flatMap((p) => (p.kind === "image" ? [p.signatureId] : [])));
       return [...ids].flatMap((id) => {
         const sig = signature(id);
         return sig ? [toStored(sig)] : [];
@@ -384,17 +386,17 @@ function createEditor() {
      * Puts back a draft's placements on the open document. Signatures it uses
      * that have since left the library are added back to it.
      */
-    async restoreDraft(saved: Placement[], signatures: StoredSignature[]) {
-      endEdit();
+    async restoreDraft(saved: Placement[], signatures: StoredSignature[], d: DocState = doc()) {
+      if (d === doc()) endEdit();
       const missing = signatures.filter((s) => !library.some((l) => l.id === s.id));
       if (missing.length) await addToLibrary(missing);
       const usable = saved.filter((p) => p.kind !== "image" || library.some((s) => s.id === p.signatureId));
-      setPlacements(structuredClone(usable));
-      setSelected(null);
-      history.clear();
+      d.setPlacements(structuredClone(usable));
+      d.setSelection([]);
+      d.history.clear();
       // New placements must not reuse the restored ones' ids.
       const used = usable.map((p) => Number(p.id.slice(1))).filter(Number.isFinite);
-      nextPlacementId = Math.max(nextPlacementId, ...used.map((n) => n + 1));
+      d.nextPlacementId = Math.max(d.nextPlacementId, ...used.map((n) => n + 1));
     },
 
     /** Adds the signatures from an export file; returns how many were added. */
@@ -404,46 +406,35 @@ function createEditor() {
       return sigs.length;
     },
 
-    /** Call when a new document is opened: clears placements made on the old one, and their history. */
-    reset(newPages: PageSize[]) {
-      session = undefined;
-      setEditing(null);
-      pages = newPages;
-      setPlacements([]);
-      setSelected(null);
-      history.clear();
-      setSavedState("[]");
-    },
-
     /** Size of a page in points (1-based), if it exists. */
-    pageSize: (page: number): PageSize | undefined => pages[page - 1],
+    pageSize: (page: number): PageSize | undefined => pageAt(page),
 
     /** Whether there are placements that haven't been downloaded. */
-    dirty,
-    /** Call after the edited PDF has been downloaded. */
-    markSaved() {
-      setSavedState(JSON.stringify(placements));
+    dirty: () => isDirty(doc()),
+    /** Call after a document's edited PDF has been downloaded. */
+    markSaved(d: DocState = doc()) {
+      d.setSavedState(JSON.stringify(d.placements));
     },
 
-    canUndo: () => (historyVersion(), history.canUndo()),
-    canRedo: () => (historyVersion(), history.canRedo()),
-    undo: () => restore(history.undo(snapshot())),
-    redo: () => restore(history.redo(snapshot())),
+    canUndo: () => (doc().historyVersion(), doc().history.canUndo()),
+    canRedo: () => (doc().historyVersion(), doc().history.canRedo()),
+    undo: () => restore(doc().history.undo(snapshot())),
+    redo: () => restore(doc().history.redo(snapshot())),
     /** Ends a merged change (a drag), so the next one is a separate undo step. */
-    endChange: () => history.seal(),
+    endChange: () => doc().history.seal(),
 
     /** Places a signature (default: the active one) centred on `center` in points, or the page centre. */
     add(page: number, center?: Point, signatureId = activeId()) {
       const sig = signature(signatureId);
-      const size = pages[page - 1];
+      const size = pageAt(page);
       if (!sig || !size) return;
       setActiveId(sig.id);
 
       const width = Math.min(DEFAULT_WIDTH, size.width / 2);
       const box = centeredAt(center ?? { x: size.width / 2, y: size.height / 2 }, width, sig.width / sig.height, size);
-      const id = `p${nextPlacementId++}`;
+      const id = nextId();
       checkpoint();
-      setPlacements(placements.length, { id, kind: "image", signatureId: sig.id, page, ...box });
+      setPlacements(doc().placements.length, { id, kind: "image", signatureId: sig.id, page, ...box });
       setSelected(id);
 
       // Remember use for ordering next session; the list doesn't reshuffle under the user now.
@@ -457,10 +448,10 @@ function createEditor() {
      * `endChange` is called; drags pass one.
      */
     update(id: string, box: Box, page?: number, tag?: string) {
-      const current = placements.find((p) => p.id === id);
+      const current = doc().placements.find((p) => p.id === id);
       if (!current) return;
       const target = page ?? current.page;
-      const size = pages[target - 1];
+      const size = pageAt(target);
       if (!size) return;
       const next = { ...(fixedSize(current) ? keptOnPage(box, size) : clampToPage(box, size)), page: target };
       const same = (Object.keys(next) as (keyof typeof next)[]).every((k) => next[k] === current[k]);
@@ -477,8 +468,8 @@ function createEditor() {
         moveGroup(boxesOf(ids), dx, dy, `nudge:${ids.join()}`);
         return;
       }
-      const current = placements.find((p) => p.id === ids[0]);
-      const size = current && pages[current.page - 1];
+      const current = doc().placements.find((p) => p.id === ids[0]);
+      const size = current && pageAt(current.page);
       if (!current || !size) return;
       checkpoint(`nudge:${current.id}`);
       const box = { x: current.x + dx, y: current.y + dy, width: current.width, height: current.height };
@@ -496,15 +487,15 @@ function createEditor() {
     /** Selects everything on a page. */
     selectAll(page: number) {
       endEdit();
-      setMany(placements.filter((p) => p.page === page).map((p) => p.id));
+      setMany(doc().placements.filter((p) => p.page === page).map((p) => p.id));
     },
     /** Removes every selected placement, as one undo step. */
     removeSelected() {
       const ids = selection();
       if (!ids.length) return;
       endEdit();
-      const remaining = placements.filter((p) => !ids.includes(p.id));
-      if (remaining.length === placements.length) return;
+      const remaining = doc().placements.filter((p) => !ids.includes(p.id));
+      if (remaining.length === doc().placements.length) return;
       checkpoint();
       setPlacements(remaining.map((p) => unwrap(p)));
       setSelection([]);
@@ -516,12 +507,12 @@ function createEditor() {
     /** Lines the selection up on one edge or centre of its bounding box, as one undo step. */
     align(edge: AlignEdge) {
       const ids = selection();
-      const items = placements.filter((p) => ids.includes(p.id));
+      const items = doc().placements.filter((p) => ids.includes(p.id));
       if (items.length < 2) return;
       const target = alignTarget(items, edge);
       checkpoint();
       for (const p of items) {
-        const size = pages[p.page - 1];
+        const size = pageAt(p.page);
         if (!size) continue;
         const box = { ...alignedBox(p, edge, target), width: p.width, height: p.height };
         setPlacements((q) => q.id === p.id, keptOnPage(box, size));
@@ -533,16 +524,16 @@ function createEditor() {
      * middle of its first line goes; by default, the middle of the page.
      */
     addText(page: number, at?: Point) {
-      const size = pages[page - 1];
+      const size = pageAt(page);
       if (!size) return;
       endEdit();
       const style = textStyle();
       const point = at ?? { x: size.width / 2, y: size.height / 2 };
       const half = (style.size * LINE_HEIGHT) / 2;
       const box = relaidOut({ x: point.x, y: point.y - half, width: 0, height: 2 * half }, "", style);
-      const id = `p${nextPlacementId++}`;
-      session = { id, before: snapshot(), isNew: true };
-      setPlacements(placements.length, { id, kind: "text", text: "", style, page, ...keptOnPage(box, size) });
+      const id = nextId();
+      doc().session = { id, before: snapshot(), isNew: true };
+      setPlacements(doc().placements.length, { id, kind: "text", text: "", style, page, ...keptOnPage(box, size) });
       setSelected(id);
       setEditing(id);
     },
@@ -551,7 +542,7 @@ function createEditor() {
     beginEdit(id: string) {
       if (!textPlacement(id) || editing() === id) return;
       endEdit();
-      session = { id, before: snapshot(), isNew: false };
+      doc().session = { id, before: snapshot(), isNew: false };
       setSelected(id);
       setEditing(id);
     },
@@ -577,7 +568,7 @@ function createEditor() {
       const style = { ...p.style, ...change };
       if (JSON.stringify(style) === JSON.stringify(p.style)) return;
       // Mid-edit, the change is part of the edit's undo step.
-      if (!session) checkpoint(tag && `style:${p.id}:${tag}`);
+      if (!doc().session) checkpoint(tag && `style:${p.id}:${tag}`);
       setText(p, p.text, style);
       setTextStyleSignal({ ...style });
       store(TEXT_STYLE_KEY, style);
@@ -586,7 +577,7 @@ function createEditor() {
     /** Resizes a text box by dragging `corner`: its font size follows. One drag is one undo step. */
     resizeText(id: string, start: TextPlacement, corner: Corner, pointer: Point) {
       const p = textPlacement(id);
-      const size = pages[start.page - 1];
+      const size = pageAt(start.page);
       if (!p || !size) return;
       const fontSize = resizedTextSize(start, start.style.size, corner, pointer, size);
       if (fontSize === p.style.size) return;
@@ -597,13 +588,13 @@ function createEditor() {
     },
 
     remove(id: string) {
-      if (!placements.some((p) => p.id === id)) return;
+      if (!doc().placements.some((p) => p.id === id)) return;
       if (editing() === id) {
         // Removing mid-edit: the removal is the undo step, from before the edit.
-        const before = session!.before;
-        session = undefined;
+        const before = doc().session!.before;
+        doc().session = undefined;
         setEditing(null);
-        if (before.some((p) => p.id === id)) history.checkpoint(before);
+        if (before.some((p) => p.id === id)) doc().history.checkpoint(before);
         setPlacements((list) => list.filter((p) => p.id !== id));
         deselect(id);
         return;
@@ -616,6 +607,7 @@ function createEditor() {
 }
 
 export type Editor = ReturnType<typeof createEditor>;
+export { createDocState, isDirty, snapshotOf, type DocState };
 
 const EditorContext = createContext<Editor>();
 
