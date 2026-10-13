@@ -1,6 +1,6 @@
 // The bar along the bottom: how many items are placed (click for the list),
 // whether they've been downloaded, and a hint for what you can do next.
-import { createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
+import { createSignal, For, Match, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { draftsEnabled, type AutosaveState } from "./autosave";
 import { formatSavedAt } from "./draftStore";
 import { CogIcon } from "./SettingsDialog";
@@ -34,6 +34,8 @@ interface Props {
   onGoToPage(page: number): void;
   autosave?: AutosaveState;
   onSettings(): void;
+  /** The document's page and zoom controls, shown on the right, before Settings. */
+  controls?: JSX.Element;
 }
 
 export function StatusBar(props: Props) {
@@ -120,6 +122,8 @@ export function StatusBar(props: Props) {
       <span class="spacer" />
       <Show when={props.hasDocument}>
         <span class="status-hint">{hint()}</span>
+        <span class="status-separator" aria-hidden="true" />
+        {props.controls}
         <span class="status-separator" aria-hidden="true" />
       </Show>
       <button class="status-settings" title="Settings" onClick={() => props.onSettings()}>

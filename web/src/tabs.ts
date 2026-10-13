@@ -134,6 +134,30 @@ export function createSession(init: { id: string; name: string; bytes: Uint8Arra
   });
 }
 
+// --- Tab mode (Settings): with it off, there's one document at a time and no tab bar ---
+
+const TABS_MODE_KEY = "pdf-flex:tabs-mode";
+
+function loadTabsMode(): boolean {
+  try {
+    return localStorage.getItem(TABS_MODE_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+/** Whether documents open in tabs. On unless turned off. */
+export const [tabsMode, setTabsModeSignal] = createSignal(loadTabsMode());
+
+export function setTabsMode(on: boolean) {
+  setTabsModeSignal(on);
+  try {
+    localStorage.setItem(TABS_MODE_KEY, on ? "on" : "off");
+  } catch {
+    // Not remembered; the choice still applies for this session.
+  }
+}
+
 // --- Remembering open tabs across reloads ---
 
 const TABS_KEY = "pdf-flex:tabs";

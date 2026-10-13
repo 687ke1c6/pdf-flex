@@ -3,6 +3,7 @@
 import { createSignal, onMount } from "solid-js";
 import { draftsEnabled, setDraftsEnabled } from "./autosave";
 import { draftStore } from "./draftStore";
+import { tabsMode } from "./tabs";
 
 /** The cog wheel, for the Settings button. */
 export const CogIcon = () => (
@@ -12,7 +13,12 @@ export const CogIcon = () => (
   </svg>
 );
 
-export function SettingsDialog(props: { onClose(): void; onDraftsDeleted(): void }) {
+export function SettingsDialog(props: {
+  onClose(): void;
+  onDraftsDeleted(): void;
+  /** Turns tab mode on or off; resolves to whether it changed (turning off can be cancelled). */
+  onTabsMode(on: boolean): Promise<boolean>;
+}) {
   let dialog!: HTMLDialogElement;
   onMount(() => dialog.showModal());
   const [deleted, setDeleted] = createSignal(false);
@@ -27,6 +33,26 @@ export function SettingsDialog(props: { onClose(): void; onDraftsDeleted(): void
   return (
     <dialog ref={dialog} class="dialog settings" onClose={() => props.onClose()}>
       <h2>Settings</h2>
+
+      <section>
+        <h3>Tabs</h3>
+        <p class="hint">
+          With tabs, several documents can be open at once, each in its own tab. Without, there's one document at a time, and opening another
+          takes its place (its draft is kept).
+        </p>
+        <label class="row">
+          <input
+            type="checkbox"
+            checked={tabsMode()}
+            onChange={async (e) => {
+              const box = e.currentTarget;
+              const changed = await props.onTabsMode(box.checked);
+              if (!changed) box.checked = tabsMode();
+            }}
+          />
+          Open documents in tabs
+        </label>
+      </section>
 
       <section>
         <h3>Drafts</h3>

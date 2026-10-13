@@ -24,7 +24,9 @@ import {
   pendingTab,
   savedTabs,
   saveTabs,
+  setTabsMode,
   tabDocId,
+  tabsMode,
   type DocSession,
   type Tab,
 } from "./tabs";
@@ -130,12 +132,17 @@ export function App() {
         await show(existing.key);
         return;
       }
-      const session = await sessionFor(id, name, bytes, resume);
+      // With tabs off, the new document takes the place of the one in front (its draft stays).
       const here = activeTab();
+      const replacing = !tabsMode() && here && !isEmptyTab(here) ? here : undefined;
+      const old = replacing?.session;
+      if (old?.atRisk() && !confirm(`Your changes to ${old.name} haven't been downloaded or saved as a draft. Open ${name} instead?`)) return;
+      await old?.autosave.flush();
+      const session = await sessionFor(id, name, bytes, resume);
       const tab = docTab(session);
       // The tab list and the tab in front change together.
       batch(() => {
-        if (here && isEmptyTab(here)) replaceTab(here.key, tab);
+        if (here && (isEmptyTab(here) || replacing)) replaceTab(here.key, tab);
         else
           setTabs((list) => {
             const at = list.findIndex((t) => t.key === activeKey());
@@ -143,6 +150,7 @@ export function App() {
           });
         setActiveKey(tab.key);
       });
+      old?.dispose();
     } catch (err) {
       setError(`Couldn't open ${name}: ${err instanceof Error ? err.message : err}`);
     } finally {
@@ -204,6 +212,36 @@ export function App() {
 
   const openFile = async (f: File) => open(f.name, new Uint8Array(await f.arrayBuffer()));
 
+  /** Opens files, each in its own tab; with tabs off, only the first. */
+  async function openFiles(files: File[]) {
+    const opening = tabsMode() ? files : files.slice(0, 1);
+    for (const f of opening) await openFile(f);
+    if (files.length > opening.length) setError(`Only ${files[0].name} was opened: turn on tabs in Settings to open several documents at once.`);
+  }
+
+  /**
+   * Turns tab mode on or off. Off keeps the tab in front and closes the rest
+   * (their drafts stay), asking first if any has work not yet in a draft.
+   * Returns whether it changed.
+   */
+  async function changeTabsMode(on: boolean): Promise<boolean> {
+    if (on) {
+      setTabsMode(true);
+      return true;
+    }
+    const others = tabs().filter((t) => t.key !== activeKey() && !isEmptyTab(t));
+    const risky = others.flatMap((t) => (t.session?.atRisk() ? [t.session.name] : []));
+    if (risky.length && !confirm(`Turning tabs off closes the other documents. Changes to ${risky.join(", ")} haven't been saved yet. Close them anyway?`))
+      return false;
+    for (const t of others) {
+      await t.session?.autosave.flush();
+      t.session?.dispose();
+    }
+    setTabs([activeTab()]);
+    setTabsMode(false);
+    return true;
+  }
+
   async function openDraft(id: string, name: string) {
     const existing = tabs().find((t) => tabDocId(t) === id);
     if (existing) return show(existing.key);
@@ -238,8 +276,7 @@ export function App() {
     setDragging(false);
     const pdfs = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
     if (!pdfs.length) setError("That doesn't look like a PDF.");
-    // Each in its own tab, one after another.
-    for (const f of pdfs) await openFile(f);
+    await openFiles(pdfs);
   }
 
   /** Asks for a file name, then downloads (see `save`). */
@@ -288,7 +325,7 @@ export function App() {
 
     // Tabs: Alt+1…9 jumps to a tab, Alt+[ and Alt+] step through them.
     // (Browsers keep Ctrl+Tab, Ctrl+W and Alt+arrows for themselves.)
-    if (e.altKey && !mod) {
+    if (e.altKey && !mod && tabsMode()) {
       if (/^Digit[1-9]$/.test(e.code)) {
         const tab = tabs()[Number(e.code.slice(5)) - 1];
         if (tab) {
@@ -385,7 +422,9 @@ export function App() {
       const saved = savedTabs();
       if (!saved.ids.length) return;
       const drafts = new Map((await draftStore.list()).map((d) => [d.id, d]));
-      const back = saved.ids.flatMap((id) => {
+      const ids = tabsMode() ? saved.ids : saved.ids.slice(saved.active, saved.active + 1);
+      if (!tabsMode()) saved.active = 0;
+      const back = ids.flatMap((id) => {
         const d = drafts.get(id);
         return d ? [pendingTab(id, d.name)] : [];
       });
@@ -441,102 +480,89 @@ export function App() {
 
   return (
     <div class="app">
-      <TabBar
-        tabs={tabs()}
-        activeKey={activeKey()}
-        canAdd={!tabs().some(isEmptyTab)}
-        onSelect={(k) => void show(k)}
-        onClose={(k) => void closeTab(k)}
-        onNew={newTab}
-      />
       <header class="toolbar">
         {/* Used by the start screen's Open PDF… button and Ctrl/Cmd+O. */}
         <input
           ref={fileInput}
           type="file"
           accept="application/pdf,.pdf"
-          multiple
+          multiple={tabsMode()}
           hidden
           onChange={async (e) => {
             const files = [...(e.currentTarget.files ?? [])];
             e.currentTarget.value = "";
-            for (const f of files) await openFile(f);
+            await openFiles(files);
           }}
         />
 
-        <Show when={active()}>
-          {(s) => {
-            const base = () => s().name.replace(/\.pdf$/i, "");
-            const ext = () => s().name.slice(base().length);
-            const pages = () => s().pdf.pages.length;
-            return (
-              <div class="doc-title" title={s().name}>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M6 2.5h8l5 5V20a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20V4a1.5 1.5 0 0 1 1-1.5z" />
-                  <path d="M14 2.5V7.5h5M8.5 12.5h7M8.5 16h5" />
-                </svg>
-                <h1 class="doc-name">
-                  <span class="doc-base">{base()}</span>
-                  <span class="doc-ext">{ext()}</span>
-                </h1>
-                <span class="doc-meta">
-                  {pages()} {pages() === 1 ? "page" : "pages"}
-                </span>
-              </div>
-            );
-          }}
+        {/* With tabs, the active tab is the document's header; without, its title is. */}
+        <Show
+          when={tabsMode()}
+          fallback={
+            <Show when={active()}>
+              {(s) => {
+                const base = () => s().name.replace(/\.pdf$/i, "");
+                const ext = () => s().name.slice(base().length);
+                const pages = () => s().pdf.pages.length;
+                return (
+                  <div class="doc-title" title={s().name}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M6 2.5h8l5 5V20a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20V4a1.5 1.5 0 0 1 1-1.5z" />
+                      <path d="M14 2.5V7.5h5M8.5 12.5h7M8.5 16h5" />
+                    </svg>
+                    <h1 class="doc-name">
+                      <span class="doc-base">{base()}</span>
+                      <span class="doc-ext">{ext()}</span>
+                    </h1>
+                    <span class="doc-meta">
+                      {pages()} {pages() === 1 ? "page" : "pages"}
+                    </span>
+                    <button class="doc-close" title="Close document (its draft is kept)" aria-label="Close document" onClick={() => void closeTab(activeKey())}>
+                      ×
+                    </button>
+                  </div>
+                );
+              }}
+            </Show>
+          }
+        >
+          <TabBar
+            tabs={tabs()}
+            activeKey={activeKey()}
+            canAdd={!tabs().some(isEmptyTab)}
+            onSelect={(k) => void show(k)}
+            onClose={(k) => void closeTab(k)}
+            onNew={newTab}
+          />
         </Show>
         <span class="spacer" />
         <Show when={active()}>
           {(s) => (
-            <>
-              <span class="edit-actions">
-                <button class="icon-button" title="Undo (Ctrl Z)" aria-label="Undo" disabled={!editor.canUndo()} onClick={() => editor.undo()}>
-                  ↶
-                </button>
-                <button class="icon-button" title="Redo (Ctrl Shift Z)" aria-label="Redo" disabled={!editor.canRedo()} onClick={() => editor.redo()}>
-                  ↷
-                </button>
-                <DownloadButton
-                  title="Download a copy with your changes"
-                  label={s().saving() ? "Saving…" : "Download PDF"}
-                  disabled={!editor.placements.length || s().saving()}
-                  onClick={startDownload}
-                />
-              </span>
-              <span class="separator" aria-hidden="true" />
-              <label class="page-nav">
-                Page
-                <input
-                  type="number"
-                  min="1"
-                  max={s().pdf.pages.length}
-                  value={s().page()}
-                  onChange={(e) => viewer?.goToPage(Number(e.currentTarget.value))}
-                />
-                / {s().pdf.pages.length}
-              </label>
-              <span class="zoom">
-                <button title="Zoom out (Ctrl −)" onClick={() => zoomTo(stepZoom(s().zoom(), -1))}>
-                  −
-                </button>
-                <span class="zoom-value">{Math.round(s().zoom() * 100)}%</span>
-                <button title="Zoom in (Ctrl +)" onClick={() => zoomTo(stepZoom(s().zoom(), 1))}>
-                  +
-                </button>
-                <button title="Actual size (Ctrl 0)" onClick={() => zoomTo(1)}>
-                  100%
-                </button>
-                <button onClick={() => viewer?.fitWidth()}>Fit width</button>
-              </span>
-            </>
+            <span class="edit-actions">
+              <button class="icon-button" title="Undo (Ctrl Z)" aria-label="Undo" disabled={!editor.canUndo()} onClick={() => editor.undo()}>
+                ↶
+              </button>
+              <button class="icon-button" title="Redo (Ctrl Shift Z)" aria-label="Redo" disabled={!editor.canRedo()} onClick={() => editor.redo()}>
+                ↷
+              </button>
+              <DownloadButton
+                title="Download a copy with your changes"
+                label={s().saving() ? "Saving…" : "Download PDF"}
+                disabled={!editor.placements.length || s().saving()}
+                onClick={startDownload}
+              />
+            </span>
           )}
         </Show>
       </header>
 
       <UpdatePrompt />
       <Show when={settings()}>
-        <SettingsDialog onClose={() => setSettings(false)} onDraftsDeleted={() => sessions().forEach((s) => s.autosave.forget())} />
+        <SettingsDialog
+          onClose={() => setSettings(false)}
+          onDraftsDeleted={() => sessions().forEach((s) => s.autosave.forget())}
+          onTabsMode={changeTabsMode}
+        />
       </Show>
 
       <Show when={error()}>
@@ -632,6 +658,39 @@ export function App() {
         onGoToPage={(n) => viewer?.goToPage(n)}
         autosave={active()?.autosave.state()}
         onSettings={() => setSettings(true)}
+        controls={
+          <Show when={active()}>
+            {(s) => (
+              <span class="view-controls">
+                <label class="page-nav">
+                  <span class="page-label">Page</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max={s().pdf.pages.length}
+                    value={s().page()}
+                    onChange={(e) => viewer?.goToPage(Number(e.currentTarget.value))}
+                  />
+                  / {s().pdf.pages.length}
+                </label>
+                <span class="zoom">
+                  <button title="Zoom out (Ctrl −)" aria-label="Zoom out" onClick={() => zoomTo(stepZoom(s().zoom(), -1))}>
+                    −
+                  </button>
+                  <button class="zoom-value" title="Actual size (Ctrl 0)" onClick={() => zoomTo(1)}>
+                    {Math.round(s().zoom() * 100)}%
+                  </button>
+                  <button title="Zoom in (Ctrl +)" aria-label="Zoom in" onClick={() => zoomTo(stepZoom(s().zoom(), 1))}>
+                    +
+                  </button>
+                  <button class="fit" title="Fit width" onClick={() => viewer?.fitWidth()}>
+                    Fit
+                  </button>
+                </span>
+              </span>
+            )}
+          </Show>
+        }
       />
     </div>
   );
