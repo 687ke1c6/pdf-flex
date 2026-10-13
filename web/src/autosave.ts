@@ -59,6 +59,8 @@ export function createAutosave(source: Source) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** What's in storage for the current document (or what it had when opened). */
   let saved = "";
+  /** When this document's draft was last written in this session, if it has been. */
+  let savedAt: number | undefined;
 
   // A new document starts from what it was opened with: nothing to save yet.
   createEffect(
@@ -66,6 +68,7 @@ export function createAutosave(source: Source) {
       clearTimeout(timer);
       timer = undefined;
       saved = source.version();
+      savedAt = undefined;
       setState({ status: "idle" });
     }),
   );
@@ -74,8 +77,16 @@ export function createAutosave(source: Source) {
     on(
       source.version,
       (version) => {
-        if (!source.doc() || !draftsEnabled() || version === saved) return;
+        if (!source.doc() || !draftsEnabled()) return;
         clearTimeout(timer);
+        timer = undefined;
+        // Back to what's stored (e.g. undo): saved again, if it was saved this session.
+        if (version === saved) {
+          if (state().status !== "error") setState(savedAt ? { status: "saved", at: savedAt } : { status: "idle" });
+          return;
+        }
+        // "Saved" only while nothing is waiting to be saved; a failure stays shown until a save works.
+        if (state().status === "saved") setState({ status: "idle" });
         timer = setTimeout(save, SAVE_DELAY_MS);
       },
       { defer: true },
@@ -106,7 +117,9 @@ export function createAutosave(source: Source) {
       );
       doc.fileSaved = true;
       saved = version;
-      setState({ status: "saved", at: now });
+      savedAt = now;
+      // Changed again while saving: the next save is already waiting.
+      setState(source.version() === version ? { status: "saved", at: now } : { status: "idle" });
     } catch (err) {
       const message = err instanceof DOMException && err.name === "QuotaExceededError" ? "the browser's storage is full" : String(err);
       setState({ status: "error", message });
