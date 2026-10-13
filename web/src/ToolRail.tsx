@@ -77,12 +77,32 @@ interface Props {
   /** Whether the active tool's panel is showing. */
   open: boolean;
   onSelect(tool: PanelTool): void;
+  /** Select or Hand, picked from the rail (narrow screens only). */
+  onPick(tool: "select" | "hand"): void;
 }
 
-/** The panel tools, down the left edge. */
+/**
+ * The panel tools, down the left edge. On narrow (touch) screens, where there's no quick bar,
+ * Select and Hand sit above them.
+ */
 export function ToolRail(props: Props) {
   return (
     <nav class="tool-rail" aria-label="Tools">
+      <For each={["select", "hand"] as const}>
+        {(tool) => (
+          <button
+            class="rail-basic"
+            classList={{ active: props.active === tool }}
+            title={toolTitle(tool)}
+            aria-label={TOOL_INFO[tool].label}
+            aria-pressed={props.active === tool}
+            onClick={() => props.onPick(tool)}
+          >
+            {TOOL_INFO[tool].icon()}
+          </button>
+        )}
+      </For>
+      <span class="rail-basic separator" aria-hidden="true" />
       <For each={PANEL_TOOLS}>
         {(tool) => (
           <button
@@ -100,7 +120,7 @@ export function ToolRail(props: Props) {
   );
 }
 
-/** Select, Hand, and the last panel tool used, floating at the bottom of the document. Icons only. */
+/** Select, Hand, and the last panel tool used, floating at the bottom of the document. Icons only. Not on narrow screens. */
 /** How long the quick bar stays up after the mouse last moved. */
 const QUICK_BAR_IDLE_MS = 3000;
 

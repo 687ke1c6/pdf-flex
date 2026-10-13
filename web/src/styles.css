@@ -49,7 +49,10 @@
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); }
 
-.app { display: flex; flex-direction: column; height: 100%; }
+/* The dynamic viewport height: on phones it follows the address bar as it shows and hides. */
+.app { display: flex; flex-direction: column; height: 100%; height: 100dvh; }
+/* Pinching zooms the document (see Viewer.tsx), never the whole app. */
+html { touch-action: pan-x pan-y; }
 
 .toolbar {
   display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
@@ -163,6 +166,14 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 }
 .tool-rail button:hover { background: var(--hover); color: var(--text); }
 .tool-rail button.active { background: var(--accent-soft); color: var(--accent); }
+.tool-rail .separator { width: 1.5rem; height: 1px; margin: 0.15rem 0; background: var(--border); }
+/* Select and Hand are in the rail only on narrow screens; elsewhere they're on the quick bar. */
+.tool-rail .rail-basic { display: none; }
+@media (max-width: 640px) {
+  .tool-rail .rail-basic { display: grid; }
+  .tool-rail .separator.rail-basic { display: block; }
+  .quick-bar { display: none; }
+}
 .tool-rail svg { width: 1.35rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 /* The panel floats over the document, next to the rail, so opening or closing it never moves the pages.
    It slides out from under the rail; closed, it's hidden once the slide has finished. */
@@ -211,7 +222,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* Page and zoom, in the status bar */
 .view-controls { display: flex; align-items: center; gap: 0.75rem; flex: none; }
 .view-controls input, .view-controls button { height: 1.6rem; font-size: 0.85rem; }
-.view-controls .page-nav input { width: 3.5em; margin: 0 0.3em; }
+.view-controls .page-nav input { width: 2.8em; margin: 0 0.3em; text-align: center; }
 .view-controls .zoom { gap: 0.15rem; }
 .view-controls .zoom button { padding: 0 0.45rem; }
 .view-controls .zoom-value { min-width: 3.6em; font-variant-numeric: tabular-nums; }

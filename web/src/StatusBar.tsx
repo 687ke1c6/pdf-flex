@@ -176,7 +176,13 @@ function DraftStatus(props: { state: AutosaveState }) {
       <Match when={props.state.status === "saving"}>
         <span class="status-draft">Saving…</span>
       </Match>
-      <Match when={saved()}>{(s) => <span class="status-draft">Saved in this browser · {formatSavedAt(s().at)}</span>}</Match>
+      <Match when={saved()}>
+        {(s) => (
+          <span class="status-draft" title={`Saved as a draft in this browser · ${formatSavedAt(s().at)}`}>
+            Saved
+          </span>
+        )}
+      </Match>
       <Match when={failed()}>
         {(f) => (
           <span class="status-unsaved" title="Your work is only in this tab until it's downloaded">

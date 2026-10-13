@@ -21,8 +21,8 @@ const NARROW = "(max-width: 640px)";
 /**
  * A panel tool's panel is open exactly while that tool is active: opening one
  * selects the tool, closing it goes back to Select. On narrow screens the panel
- * covers the page, so there it opens and closes on its own, and a tool picked
- * from the quick bar is used with its panel closed.
+ * covers the page, so there it opens and closes on its own, and Select and Hand
+ * (in the rail there, as there's no quick bar) close it.
  */
 export function Sidebar(props: Props) {
   const editor = useEditor();
@@ -67,9 +67,14 @@ export function Sidebar(props: Props) {
     editor.setTool(next === editor.tool() ? "select" : next);
   }
 
+  function pick(tool: "select" | "hand") {
+    editor.setTool(tool);
+    setNarrowOpen(false);
+  }
+
   return (
     <aside class="sidebar">
-      <ToolRail active={editor.tool()} open={open() && current() !== "selection"} onSelect={select} />
+      <ToolRail active={editor.tool()} open={open() && current() !== "selection"} onSelect={select} onPick={pick} />
       {/* Always there, so it can slide in and out; closed, it's out of reach of the keyboard and screen readers. */}
       <div class="sidebar-panel" classList={{ open: open() }} ref={panel}>
         <section class="tool-panel">

@@ -115,6 +115,43 @@ export function Viewer(props: Props) {
     props.onZoom(clampZoom(props.zoom * Math.exp(-e.deltaY * 0.002)));
   }
 
+  /**
+   * Two-finger pinch zooms the document around the point between the fingers, which also pans as
+   * they move. The page itself can't be pinch-zoomed (touch-action on <html>), so this is the only zoom.
+   */
+  let pinch: { distance: number; zoom: number; anchor: Anchor } | undefined;
+  const touchesAt = (e: TouchEvent) => {
+    const [a, b] = [e.touches[0], e.touches[1]];
+    const rect = scroller.getBoundingClientRect();
+    return {
+      distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+      x: (a.clientX + b.clientX) / 2 - rect.left,
+      y: (a.clientY + b.clientY) / 2 - rect.top,
+    };
+  };
+
+  function onTouchStart(e: TouchEvent) {
+    if (e.touches.length !== 2) return;
+    const at = touchesAt(e);
+    const start = anchorAt(at.x, at.y);
+    pinch = start && at.distance > 0 ? { distance: at.distance, zoom: props.zoom, anchor: start } : undefined;
+  }
+
+  function onTouchMove(e: TouchEvent) {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    const at = touchesAt(e);
+    anchor = { ...pinch.anchor, viewX: at.x, viewY: at.y };
+    props.onZoom(clampZoom(pinch.zoom * (at.distance / pinch.distance)));
+  }
+
+  function onTouchEnd(e: TouchEvent) {
+    if (e.touches.length < 2) pinch = undefined;
+  }
+
+  // Older Safari pinch-zooms the page through its own gesture events, whatever touch-action says.
+  const onGesture = (e: Event) => e.preventDefault();
+
   /** Whether a key press belongs to a text field or a dialog rather than the document. */
   const typingOrDialog = (e: KeyboardEvent) =>
     e.target instanceof HTMLInputElement ||
@@ -200,6 +237,12 @@ export function Viewer(props: Props) {
     watchDpr();
 
     scroller.addEventListener("wheel", onWheel, { passive: false });
+    scroller.addEventListener("touchstart", onTouchStart, { passive: true });
+    scroller.addEventListener("touchmove", onTouchMove, { passive: false });
+    scroller.addEventListener("touchend", onTouchEnd);
+    scroller.addEventListener("touchcancel", onTouchEnd);
+    document.addEventListener("gesturestart", onGesture);
+    document.addEventListener("gesturechange", onGesture);
     // Capture phase: runs before the page overlays (and Solid's delegated handlers) see the press.
     scroller.addEventListener("pointerdown", onPanStart, { capture: true });
     window.addEventListener("keydown", onKeyDown);
@@ -214,6 +257,12 @@ export function Viewer(props: Props) {
       observer.disconnect();
       media?.removeEventListener("change", onDprChange);
       scroller.removeEventListener("wheel", onWheel);
+      scroller.removeEventListener("touchstart", onTouchStart);
+      scroller.removeEventListener("touchmove", onTouchMove);
+      scroller.removeEventListener("touchend", onTouchEnd);
+      scroller.removeEventListener("touchcancel", onTouchEnd);
+      document.removeEventListener("gesturestart", onGesture);
+      document.removeEventListener("gesturechange", onGesture);
     });
 
     props.api({
