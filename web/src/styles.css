@@ -189,7 +189,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .shape-tools button.active { background: rgb(37 99 235 / 0.12); border-color: var(--accent); color: var(--accent); }
 .shape-tools svg { width: 1.3rem; height: 1.3rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .shape-tools svg.filled { fill: currentColor; }
-.shape-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+.shape-row { display: flex; align-items: flex-start; gap: 0.5rem; margin-top: 0.5rem; }
+.shape-row .shape-label { line-height: 1.6rem; }
 .shape-label { width: 3.6rem; flex: none; color: var(--muted); font-size: 0.85rem; }
 .shape-row .size { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
 .shape-row .size input { width: 4.2em; }
@@ -209,7 +210,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .text-row .segmented { flex: none; }
 .text-row .size { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
 .text-row .size input { width: 4.2em; }
-.colors { display: flex; align-items: center; gap: 0.35rem; }
+.colors { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; min-width: 0; }
 .colors input[type="color"] { width: 1.6rem; height: 1.6rem; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: none; }
 .text-warning { color: var(--danger); background: var(--danger-bg); padding: 0.4rem 0.6rem; border-radius: 4px; font-size: 0.85rem; }
 
