@@ -1,5 +1,8 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createAutosave, type DraftDocument } from "./autosave";
+import { documentId } from "./db";
 import { download, editedName } from "./download";
+import { draftStore, formatSavedAt, usablePlacements, type Draft } from "./draftStore";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
 import { openPdf, type LoadedPdf } from "./pdf";
 import { Sidebar } from "./Sidebar";
@@ -7,6 +10,7 @@ import { StatusBar } from "./StatusBar";
 import { inspectPdf, sameLayout, stampPdf } from "./stamper";
 import { clampZoom, stepZoom } from "./zoom";
 import { AboutDialog, UpdatePrompt } from "./pwa";
+import { RecentDrafts } from "./RecentDrafts";
 import { Viewer, type ViewerApi } from "./Viewer";
 
 /** An opened file. `bytes` is the untouched original, which is what gets stamped. */
@@ -27,20 +31,64 @@ export function App() {
   const [samples, setSamples] = createSignal<string[]>([]);
   const [saving, setSaving] = createSignal(false);
   const [about, setAbout] = createSignal(false);
+  /** The open document as drafts know it. */
+  const [draftDoc, setDraftDoc] = createSignal<DraftDocument | null>(null);
+  /** A draft found for the document just opened, offered for restoring. */
+  const [offer, setOffer] = createSignal<Draft | null>(null);
   let viewer: ViewerApi | undefined;
   let fileInput!: HTMLInputElement;
 
-  async function open(name: string, bytes: Uint8Array) {
-    if (editor.dirty() && !confirm("Your changes haven't been downloaded. Open another PDF and discard them?")) return;
+  const autosave = createAutosave({
+    doc: draftDoc,
+    version: () => JSON.stringify(editor.placements),
+    placements: () => editor.placementsSnapshot(),
+    signatures: () => editor.usedSignatures(),
+  });
+
+  // Starting work while a draft is on offer means starting over.
+  createEffect(on(() => JSON.stringify(editor.placements), () => offer() && editor.placements.length && setOffer(null), { defer: true }));
+
+  /** Whether leaving the document now would lose work: not downloaded, and not safely in a draft. */
+  const atRisk = () => editor.dirty() && !autosave.upToDate();
+
+  async function restore(draft: Draft) {
+    setOffer(null);
+    await editor.restoreDraft(usablePlacements(draft), draft.signatures);
+  }
+
+  /**
+   * Opens a PDF. If it has a draft, that's offered for restoring, or restored
+   * straight away with `resume` (when picked from the drafts list).
+   */
+  async function open(name: string, bytes: Uint8Array, resume = false) {
+    if (atRisk() && !confirm("Your changes haven't been downloaded. Open another PDF and discard them?")) return;
     setError("");
     setLoading(true);
     try {
+      await autosave.flush();
       const pdf = await openPdf(bytes);
+      const id = await documentId(bytes);
+      const draft = await draftStore.get(id).catch(() => undefined);
       await file()?.pdf.close();
       setPage(1);
+      setOffer(null);
+      // Detach the old document first, so clearing the page can't be saved as its draft.
+      setDraftDoc(null);
       editor.reset(pdf.pages);
       const opened = { name, bytes, pdf };
       setFile(opened);
+      setDraftDoc({
+        id,
+        name: draft?.name ?? name,
+        bytes,
+        pageCount: pdf.pages.length,
+        createdAt: draft?.createdAt ?? Date.now(),
+        fileSaved: !!draft,
+      });
+      if (draft?.placements.length) {
+        if (resume) await restore(draft);
+        else setOffer(draft);
+      }
       // In the background: warn now, not at save time, if this PDF can't be edited.
       inspectPdf(bytes).then(
         ({ pages, digitallySigned }) => {
@@ -64,6 +112,12 @@ export function App() {
   }
 
   const openFile = async (f: File) => open(f.name, new Uint8Array(await f.arrayBuffer()));
+
+  async function openDraft(id: string, name: string) {
+    const bytes = await draftStore.pdf(id).catch(() => undefined);
+    if (bytes) await open(name, bytes, true);
+    else setError(`The saved copy of ${name} couldn't be read. Open the file itself to start again.`);
+  }
 
   async function openSample(path: string) {
     const res = await fetch(`/samples/${path}`);
@@ -197,8 +251,17 @@ export function App() {
     const onKeyUp = (e: KeyboardEvent) => e.key.startsWith("Arrow") && editor.endChange();
     window.addEventListener("keyup", onKeyUp);
     // Closing or reloading the tab with placements not yet downloaded asks first.
+    // Leaving or hiding the tab saves a waiting draft straight away.
+    const onHide = () => document.visibilityState === "hidden" && void autosave.flush();
+    const onPageHide = () => void autosave.flush();
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onPageHide);
+    onCleanup(() => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onPageHide);
+    });
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!editor.dirty()) return;
+      if (!atRisk()) return;
       e.preventDefault();
       e.returnValue = ""; // older browsers need this as well
     };
@@ -320,7 +383,7 @@ export function App() {
 
       <UpdatePrompt />
       <Show when={about()}>
-        <AboutDialog onClose={() => setAbout(false)} />
+        <AboutDialog onClose={() => setAbout(false)} onDraftsDeleted={() => autosave.forget()} />
       </Show>
 
       <Show when={error()}>
@@ -328,6 +391,23 @@ export function App() {
           {error()}
           <button onClick={() => setError("")}>Dismiss</button>
         </div>
+      </Show>
+
+      <Show when={offer()}>
+        {(draft) => (
+          <div class="restore" role="status">
+            <span>
+              You have unsaved work on this document from {formatSavedAt(draft().savedAt)} ({draft().placements.length}{" "}
+              {draft().placements.length === 1 ? "item" : "items"}).
+            </span>
+            <button class="primary" onClick={() => restore(draft())}>
+              Restore
+            </button>
+            <button title="Your next change replaces the saved work" onClick={() => setOffer(null)}>
+              Start over
+            </button>
+          </div>
+        )}
       </Show>
 
       <div class="body">
@@ -346,6 +426,7 @@ export function App() {
                 </button>
                 <p class="hint">or drop a file anywhere in this window</p>
                 <p class="hint">Your file stays on this device. Nothing is uploaded.</p>
+                <RecentDrafts onOpen={(d) => openDraft(d.id, d.name)} onError={setError} />
               </div>
             }
           >
@@ -362,7 +443,7 @@ export function App() {
         </main>
       </div>
       <Show when={file()}>
-        <StatusBar onGoToPage={(n) => viewer?.goToPage(n)} />
+        <StatusBar onGoToPage={(n) => viewer?.goToPage(n)} autosave={autosave.state()} />
       </Show>
     </div>
   );

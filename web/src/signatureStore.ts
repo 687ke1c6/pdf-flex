@@ -1,5 +1,6 @@
 // The signature library, persisted in IndexedDB.
 import type { Stroke } from "./drawing";
+import { run } from "./db";
 
 export type SignatureSource = "import" | "typed" | "drawn";
 
@@ -22,42 +23,16 @@ export interface StoredSignature {
   recipe?: SignatureRecipe;
 }
 
-const DB_NAME = "pdf-flex";
-const DB_VERSION = 1;
-const STORE = "signatures";
-
-let dbPromise: Promise<IDBDatabase> | undefined;
-
-function db(): Promise<IDBDatabase> {
-  dbPromise ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => request.result.createObjectStore(STORE, { keyPath: "id" });
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-  return dbPromise;
-}
-
-/** Runs one request in its own transaction and resolves when the transaction commits. */
-async function run<T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const tx = (await db()).transaction(STORE, mode);
-  const request = op(tx.objectStore(STORE));
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve(request.result);
-    tx.onerror = tx.onabort = () => reject(tx.error ?? request.error);
-  });
-}
-
 export const newSignatureId = () => `sig-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 export const signatureStore = {
   /** All saved signatures, most recently used first. */
   async list(): Promise<StoredSignature[]> {
-    const all = await run("readonly", (s) => s.getAll() as IDBRequest<StoredSignature[]>);
+    const all = await run("signatures", "readonly", (s) => s.getAll() as IDBRequest<StoredSignature[]>);
     return all.sort((a, b) => b.lastUsedAt - a.lastUsedAt);
   },
-  put: (sig: StoredSignature) => run("readwrite", (s) => s.put(sig)),
-  remove: (id: string) => run("readwrite", (s) => s.delete(id)),
+  put: (sig: StoredSignature) => run("signatures", "readwrite", (s) => s.put(sig)),
+  remove: (id: string) => run("signatures", "readwrite", (s) => s.delete(id)),
 };
 
 /** Asks the browser not to evict our storage under pressure. Best effort; ignored if unsupported. */

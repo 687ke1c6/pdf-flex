@@ -313,6 +313,34 @@ function createEditor() {
 
     exportLibrary: () => exportSignatures(library.map(toStored)),
 
+    /** A plain copy of the placements, for saving. */
+    placementsSnapshot: snapshot,
+    /** The signatures the placements use, as stored records. */
+    usedSignatures(): StoredSignature[] {
+      const ids = new Set(placements.flatMap((p) => (p.kind === "image" ? [p.signatureId] : [])));
+      return [...ids].flatMap((id) => {
+        const sig = signature(id);
+        return sig ? [toStored(sig)] : [];
+      });
+    },
+
+    /**
+     * Puts back a draft's placements on the open document. Signatures it uses
+     * that have since left the library are added back to it.
+     */
+    async restoreDraft(saved: Placement[], signatures: StoredSignature[]) {
+      endEdit();
+      const missing = signatures.filter((s) => !library.some((l) => l.id === s.id));
+      if (missing.length) await addToLibrary(missing);
+      const usable = saved.filter((p) => p.kind !== "image" || library.some((s) => s.id === p.signatureId));
+      setPlacements(structuredClone(usable));
+      setSelected(null);
+      history.clear();
+      // New placements must not reuse the restored ones' ids.
+      const used = usable.map((p) => Number(p.id.slice(1))).filter(Number.isFinite);
+      nextPlacementId = Math.max(nextPlacementId, ...used.map((n) => n + 1));
+    },
+
     /** Adds the signatures from an export file; returns how many were added. */
     async importLibrary(text: string): Promise<number> {
       const sigs = parseSignatureExport(text);

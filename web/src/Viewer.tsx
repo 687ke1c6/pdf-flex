@@ -39,6 +39,9 @@ export function Viewer(props: Props) {
   const [renderScale, setRenderScale] = createSignal(scale());
   const [active, setActive] = createSignal(new Set<number>(), { equals: false });
   const [dprTick, setDprTick] = createSignal(0);
+  /** Space is held: dragging pans instead of acting on the page. */
+  const [panReady, setPanReady] = createSignal(false);
+  const [panning, setPanning] = createSignal(false);
   let anchor: Anchor | undefined;
 
   // Debounce re-rendering while the zoom is changing.
@@ -98,6 +101,55 @@ export function Viewer(props: Props) {
     props.onZoom(clampZoom(props.zoom * Math.exp(-e.deltaY * 0.002)));
   }
 
+  /** Whether a key press belongs to a text field or a dialog rather than the document. */
+  const typingOrDialog = (e: KeyboardEvent) =>
+    e.target instanceof HTMLInputElement ||
+    e.target instanceof HTMLTextAreaElement ||
+    e.target instanceof HTMLSelectElement ||
+    !!document.querySelector("dialog[open]");
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.code !== "Space" || typingOrDialog(e)) return;
+    // Space would otherwise scroll the page, or press a focused button.
+    e.preventDefault();
+    setPanReady(true);
+  }
+
+  function onKeyUp(e: KeyboardEvent) {
+    if (e.code === "Space") setPanReady(false);
+  }
+
+  /**
+   * With Space held, a drag pans the document. Caught before it reaches the
+   * page, so it never moves, draws or adds anything.
+   */
+  function onPanStart(e: PointerEvent) {
+    if (!panReady() || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const start = { x: e.clientX, y: e.clientY, left: scroller.scrollLeft, top: scroller.scrollTop };
+    scroller.setPointerCapture(e.pointerId);
+    setPanning(true);
+    const move = (m: PointerEvent) => {
+      if (m.pointerId !== e.pointerId) return;
+      scroller.scrollLeft = start.left - (m.clientX - start.x);
+      scroller.scrollTop = start.top - (m.clientY - start.y);
+    };
+    const end = (u: PointerEvent) => {
+      if (u.pointerId !== e.pointerId) return;
+      scroller.removeEventListener("pointermove", move);
+      scroller.removeEventListener("pointerup", end);
+      scroller.removeEventListener("pointercancel", end);
+      setPanning(false);
+    };
+    scroller.addEventListener("pointermove", move);
+    scroller.addEventListener("pointerup", end);
+    scroller.addEventListener("pointercancel", end);
+  }
+
+  // Letting go of Space while the window is in the background never arrives as a keyup.
+  const onBlur = () => setPanReady(false);
+
   function fitWidth() {
     anchor = centerAnchor();
     const widest = Math.max(...props.pdf.pages.map((p) => p.width));
@@ -134,7 +186,16 @@ export function Viewer(props: Props) {
     watchDpr();
 
     scroller.addEventListener("wheel", onWheel, { passive: false });
+    // Capture phase: runs before the page overlays (and Solid's delegated handlers) see the press.
+    scroller.addEventListener("pointerdown", onPanStart, { capture: true });
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
     onCleanup(() => {
+      scroller.removeEventListener("pointerdown", onPanStart, { capture: true });
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
       observer.disconnect();
       media?.removeEventListener("change", onDprChange);
       scroller.removeEventListener("wheel", onWheel);
@@ -151,7 +212,7 @@ export function Viewer(props: Props) {
   });
 
   return (
-    <div class="scroller" ref={scroller} onScroll={onScroll}>
+    <div class="scroller" classList={{ "pan-ready": panReady(), panning: panning() }} ref={scroller} onScroll={onScroll}>
       <div class="pages" ref={pagesEl}>
         <For each={props.pdf.pages}>
           {(size, i) => (

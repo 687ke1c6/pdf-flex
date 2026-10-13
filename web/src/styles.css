@@ -58,6 +58,9 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .main { position: relative; flex: 1; min-height: 0; background: var(--bg); }
 
 .scroller { position: absolute; inset: 0; overflow: auto; }
+/* Space held: a hand over everything in the document, whatever it would otherwise show. */
+.scroller.pan-ready, .scroller.pan-ready * { cursor: grab !important; }
+.scroller.panning, .scroller.panning * { cursor: grabbing !important; user-select: none; }
 /* max-content + min-width keeps wide (zoomed) pages scrollable instead of clipped on the left. */
 .pages {
   position: relative; width: max-content; min-width: 100%;
@@ -258,5 +261,21 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* Guide line and hint are page elements, not canvas pixels, so they're never exported. */
 .pad-baseline { position: absolute; left: 8%; right: 8%; bottom: 28%; border-bottom: 1px dashed #c8cbd0; pointer-events: none; }
 .pad-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; }
+
+/* Drafts: the restore offer, the list on the empty screen, and the status */
+.restore { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.75rem; background: #e0ecff; border-bottom: 1px solid var(--border); }
+.restore span { flex: 1; }
+.recent { margin-top: 2rem; width: min(30rem, calc(100vw - 2rem)); }
+.recent h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 0.5rem; }
+.recent ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.recent li { display: flex; align-items: center; gap: 0.3rem; }
+.recent-open {
+  flex: 1; min-width: 0; height: auto; padding: 0.45rem 0.7rem;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; text-align: left;
+}
+.recent-name { font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-meta { font-size: 0.8rem; color: var(--muted); }
+.status-draft { color: var(--muted); }
+.dialog h3 { font-size: 0.95rem; margin: 1rem 0 0.3rem; }
 
 .update { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.75rem; background: #e0ecff; border-bottom: 1px solid var(--border); }

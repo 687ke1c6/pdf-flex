@@ -1,6 +1,8 @@
 // The bar along the bottom: how many items are placed (click for the list),
 // whether they've been downloaded, and a hint for what you can do next.
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
+import { draftsEnabled, type AutosaveState } from "./autosave";
+import { formatSavedAt } from "./draftStore";
 import { useEditor } from "./editor";
 import type { Placement } from "./placement";
 import { isSymbol, type ShapeKind } from "./shapes";
@@ -27,6 +29,7 @@ const DRAW_HINTS: Record<ShapeKind, string> = {
 
 interface Props {
   onGoToPage(page: number): void;
+  autosave: AutosaveState;
 }
 
 export function StatusBar(props: Props) {
@@ -82,8 +85,18 @@ export function StatusBar(props: Props) {
       >
         {count()} {count() === 1 ? "item" : "items"} <span aria-hidden="true">{listOpen() ? "▾" : "▴"}</span>
       </button>
-      <Show when={editor.dirty()} fallback={<Show when={count()}><span class="status-saved">Downloaded</span></Show>}>
-        <span class="status-unsaved">Unsaved changes</span>
+      <Show
+        when={draftsEnabled()}
+        fallback={
+          <Show when={editor.dirty()} fallback={<Show when={count()}><span class="status-saved">Downloaded</span></Show>}>
+            <span class="status-unsaved">Unsaved changes</span>
+          </Show>
+        }
+      >
+        <DraftStatus state={props.autosave} />
+        <Show when={!editor.dirty() && count()}>
+          <span class="status-saved">Downloaded</span>
+        </Show>
       </Show>
       <span class="spacer" />
       <span class="status-hint">{hint()}</span>
@@ -116,5 +129,26 @@ export function StatusBar(props: Props) {
         </div>
       </Show>
     </footer>
+  );
+}
+
+/** Where the draft of the open document stands. */
+function DraftStatus(props: { state: AutosaveState }) {
+  const saved = () => (props.state.status === "saved" ? props.state : undefined);
+  const failed = () => (props.state.status === "error" ? props.state : undefined);
+  return (
+    <Switch>
+      <Match when={props.state.status === "saving"}>
+        <span class="status-draft">Saving…</span>
+      </Match>
+      <Match when={saved()}>{(s) => <span class="status-draft">Saved in this browser · {formatSavedAt(s().at)}</span>}</Match>
+      <Match when={failed()}>
+        {(f) => (
+          <span class="status-unsaved" title="Your work is only in this tab until it's downloaded">
+            Couldn't save a draft: {f().message}
+          </span>
+        )}
+      </Match>
+    </Switch>
   );
 }
