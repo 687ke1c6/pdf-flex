@@ -1,5 +1,6 @@
 // Dark mode (Settings): a data-theme attribute on <html> that switches the colour variables in styles.css.
-// index.html applies the saved choice before the first paint, so a dark start screen doesn't flash white.
+// public/theme.js applies the saved choice before the first paint, so a dark start screen doesn't flash white;
+// it's applied here too, so the app is right even if that script didn't run.
 import { createSignal } from "solid-js";
 
 const DARK_MODE_KEY = "pdf-flex:dark-mode";
@@ -14,6 +15,7 @@ function loadDarkMode(): boolean {
 
 /** Whether the app is dark. Off unless turned on. */
 export const [darkMode, setDarkModeSignal] = createSignal(loadDarkMode());
+document.documentElement.dataset.theme = darkMode() ? "dark" : "light";
 
 export function setDarkMode(on: boolean) {
   setDarkModeSignal(on);

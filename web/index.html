@@ -9,11 +9,7 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>pdf-flex</title>
     <!-- The saved theme (see src/theme.ts), applied before the first paint. -->
-    <script>
-      try {
-        document.documentElement.dataset.theme = localStorage.getItem("pdf-flex:dark-mode") === "on" ? "dark" : "light";
-      } catch {}
-    </script>
+    <script src="/theme.js"></script>
   </head>
   <body>
     <div id="root"></div>
