@@ -65,11 +65,13 @@ export function StatusBar(props: Props) {
 
   const hint = () => {
     if (editor.editing()) return "Escape or click elsewhere to finish editing";
+    const many = editor.selection().length;
+    if (many > 1) return `${many} selected · Delete removes them · Arrow keys move them · Ctrl+click adds or removes`;
     if (editor.selectedText()) return "Enter or double-click to edit · Arrow keys nudge (Shift: 10 pt) · Delete removes";
     const shape = editor.selectedShape();
     if (shape?.ends) return "Drag the ends to change the line · Arrow keys nudge (Shift: 10 pt) · Delete removes";
     if (shape && !isSymbol(shape.shape)) return "Drag a corner to resize (Shift: keep proportions) · Arrow keys nudge · Delete removes";
-    if (editor.selected()) return "Arrow keys nudge (Shift: 10 pt) · Delete removes";
+    if (editor.selected()) return "Arrow keys nudge (Shift: 10 pt) · Delete removes · Ctrl+click another to select both";
     if (editor.tool() === "text") return "Click on a page to add text";
     if (editor.tool() === "shapes") return DRAW_HINTS[editor.shapeTool()];
     return "Drag a signature onto a page to place it";
@@ -108,10 +110,15 @@ export function StatusBar(props: Props) {
             <ul class="placements">
               <For each={editor.placements}>
                 {(p) => (
-                  <li classList={{ selected: editor.selected() === p.id }}>
+                  <li classList={{ selected: editor.isSelected(p.id) }}>
                     <button
                       class="link"
-                      onClick={() => {
+                      title="Click to select · Ctrl+click to add to the selection"
+                      onClick={(e) => {
+                        if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                          editor.toggleSelect(p.id);
+                          return;
+                        }
                         editor.select(p.id);
                         props.onGoToPage(p.page);
                       }}

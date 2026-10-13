@@ -58,6 +58,7 @@ Each chunk ends with something you can run and check, then a review and a commit
 | 4 | Text tool in the app | Add and edit text in the browser; in the download it is selectable, searchable and where the preview showed it | ✅ (pending your check) |
 | 5 | Image text (other fonts) | Text in a script font saves as a crisp image, positioned as previewed | 🔜 |
 | 6 | Shapes and symbols | Draw each shape and symbol, style it, save; it matches the preview in Chrome and Acrobat | ✅ (pending your check) |
+| 7 | Multi-select and align | Ctrl+click several items; delete, nudge, drag and align them together | ✅ (pending your check) |
 
 ### Chunk 1: Tool rail and panels
 A UI-only refactor; no behaviour changes.
@@ -214,6 +215,22 @@ The model change everything after this builds on, made with only the existing ki
   2. Place ✓ ✗ ● ○ by clicking and by dragging; resize them small.
   3. Restyle: outline colour, width, fill, none. Undo/redo a drawing, a restyle, a resize, an end drag.
   4. Download and compare with the preview in Chrome and Acrobat, including on a rotated page.
+
+### Chunk 7: Multi-select and align
+Added after chunk 6, at your request.
+- **Selecting:** Ctrl+click (Cmd+click on a Mac; Shift+click too) adds an item to the selection or takes it out, on the page or in the "On this document" list. A plain click selects one item; clicking empty space clears (with a modifier held, it leaves the selection alone). **Ctrl/Cmd+A** selects everything on the current page; Escape clears. Editing text selects just that box.
+- **Model:** the editor keeps `selection()` (ids, in order). `selected()` still means "the only selected item", which is what resize handles, the × button, the style panels and Enter-to-edit act on, so they're unchanged with one item and hidden with several.
+- **Together:** Delete removes them all; arrow keys nudge them all; dragging any of them moves the group. Each is one undo step. A group stays on its own pages (no dragging onto another page), and its move stops as soon as one item would leave its page, so the arrangement never distorts.
+- **Align** (top bar, before Download, shown with 2+ selected): **left, centre, right** line items up along a vertical line; **top, middle, bottom** along a horizontal one. Edges and centres are those of the selection's bounding box (as Figma and PowerPoint do). Items on different pages line up by their position on the page. One undo step.
+- **Pure functions** in `arrange.ts` (`alignTarget`, `alignedBox`, `limitGroupMove`), 8 tests.
+- **Status bar:** "3 selected · Delete removes them · Arrow keys move them · Ctrl+click adds or removes".
+- **Later:** drag a box on empty space to select what's inside; distribute three or more evenly.
+- **Your checks:**
+  1. Ctrl+click (Cmd+click on a Mac) a signature, a text box and a shape: all three outlined, no handles. Ctrl+click one again to drop it.
+  2. Delete removes them all; undo brings them all back.
+  3. Arrow keys and dragging move them together; at a page edge the whole group stops.
+  4. Each of the six align buttons, then undo. Try items on two different pages.
+  5. Ctrl+A on a page; Ctrl+click in the items list.
 
 ---
 

@@ -28,6 +28,12 @@ html, body, #root { height: 100%; margin: 0; }
 .edit-actions { display: inline-flex; align-items: center; gap: 0.25rem; }
 .icon-button { padding: 0 0.55rem; font-size: 1.1rem; }
 button.download { margin-left: 0.25rem; }
+.edit-actions .separator { align-self: stretch; width: 1px; margin: 0.15rem 0.2rem; background: var(--border); }
+.align-buttons { display: inline-flex; gap: 0.15rem; }
+.align-buttons .icon-button { padding: 0 0.35rem; }
+.align-buttons svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-linecap: round; }
+.align-buttons .axis { stroke-width: 1.5; }
+.align-buttons .bars { stroke-width: 3.5; }
 button.download svg { width: 1.1rem; height: 1.1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 640px) {
   button.download .label { display: none; }

@@ -53,6 +53,8 @@ export function PageOverlay(props: Props) {
    */
   function onEmptySpace(e: PointerEvent) {
     if (e.target !== e.currentTarget) return;
+    // Ctrl/Cmd/Shift + click adds to the selection; on empty space, it leaves the selection alone.
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (editor.tool() === "text" && e.button === 0) {
       // Keeps focus from moving to the page, so the new box's textarea keeps it.
       e.preventDefault();
@@ -132,7 +134,9 @@ interface BoxProps {
 
 function PlacementBox(props: BoxProps) {
   const editor = useEditor();
-  const isSelected = () => editor.selected() === props.placement.id;
+  const isSelected = () => editor.isSelected(props.placement.id);
+  /** The only selected item: it gets the handles and the remove button. */
+  const isSole = () => editor.selected() === props.placement.id;
   const css = () => toCss(props.placement, props.size, props.scale);
 
   /**
@@ -140,14 +144,14 @@ function PlacementBox(props: BoxProps) {
    * Listens on the window: a placement dragged onto another page is re-created
    * there, and the element that started the drag goes away.
    */
-  function track(e: PointerEvent, onMove: (e: PointerEvent) => void) {
+  function track(e: PointerEvent, onMove: (e: PointerEvent) => void, keepSelection = false) {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     const id = props.placement.id;
     // A drag ends any text edit, so the two undo separately.
     editor.endEdit();
-    editor.select(id);
+    if (!keepSelection) editor.select(id);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const end = (u: PointerEvent) => {
       if (u.pointerId !== e.pointerId) return;
@@ -164,6 +168,22 @@ function PlacementBox(props: BoxProps) {
 
   function startMove(e: PointerEvent) {
     const id = props.placement.id;
+    if (e.button !== 0) return;
+    // Ctrl/Cmd/Shift + click adds the item to the selection, or takes it out.
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      editor.toggleSelect(id);
+      return;
+    }
+    // Dragging one of several selected items moves them all, each on its own page.
+    if (editor.selection().length > 1 && editor.isSelected(id)) {
+      const starts = editor.selectionBoxes();
+      const scale = props.scale;
+      const tag = `group:${Date.now()}`;
+      track(e, (m) => editor.moveGroup(starts, (m.clientX - e.clientX) / scale, -(m.clientY - e.clientY) / scale, tag), true);
+      return;
+    }
     const layer = (e.currentTarget as HTMLElement).closest(".page-overlay")!;
     // Where the box was grabbed, relative to its bottom-left corner, in points.
     const grab = props.pointerOnPage(e, layer);
@@ -232,6 +252,8 @@ function PlacementBox(props: BoxProps) {
       }}
       onPointerDown={startMove}
       onDblClick={() => props.placement.kind === "text" && editor.beginEdit(props.placement.id)}
+      // On a Mac, Ctrl + click is also a right click: keep the menu away while selecting.
+      onContextMenu={(e) => e.ctrlKey && e.preventDefault()}
     >
       <Switch>
         <Match when={props.placement.kind === "image" && editor.signature(props.placement.signatureId)}>
@@ -246,7 +268,7 @@ function PlacementBox(props: BoxProps) {
           )}
         </Match>
       </Switch>
-      <Show when={isSelected()}>
+      <Show when={isSole()}>
         <Show
           when={lineEnds()}
           fallback={<For each={CORNERS}>{(corner) => <div class={`handle ${corner}`} onPointerDown={(e) => startResize(e, corner)} />}</For>}

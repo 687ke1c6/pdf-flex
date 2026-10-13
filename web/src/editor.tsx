@@ -16,6 +16,7 @@ import {
   type ShapePlacement,
   type TextPlacement,
 } from "./placement";
+import { alignedBox, alignTarget, limitGroupMove, type AlignEdge, type GroupBox } from "./arrange";
 import { DEFAULT_SHAPE_STYLE, lineBox, lineEnds, SHAPE_KINDS, type ShapeKind, type ShapeStyle } from "./shapes";
 import { savedTool, saveTool, type Tool } from "./ToolRail";
 import { LINE_HEIGHT, opposite, relaidOut, resizedTextSize, type TextStyle } from "./textLayout";
@@ -89,7 +90,15 @@ function createEditor() {
   const [library, setLibrary] = createStore<Signature[]>([]);
   const [activeId, setActiveId] = createSignal<string | null>(null);
   const [placements, setPlacements] = createStore<Placement[]>([]);
-  const [selected, setSelected] = createSignal<string | null>(null);
+  /** The selected placements' ids, in the order they were selected. */
+  const [selection, setSelection] = createSignal<string[]>([]);
+  /** The selected placement when exactly one is: what handles, style panels and editing act on. */
+  const selected = () => {
+    const ids = selection();
+    return ids.length === 1 ? ids[0] : null;
+  };
+  const setSelected = (id: string | null) => setSelection(id ? [id] : []);
+  const deselect = (id: string) => setSelection((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : ids));
   const [tool, setToolSignal] = createSignal<Tool>(savedTool());
   const [textStyle, setTextStyleSignal] = createSignal<TextStyle>(load(TEXT_STYLE_KEY, DEFAULT_TEXT_STYLE));
   const [editing, setEditing] = createSignal<string | null>(null);
@@ -114,7 +123,7 @@ function createEditor() {
     // A signature may have been deleted from the library since; its placements can't come back.
     state = state.filter((p) => p.kind !== "image" || library.some((s) => s.id === p.signatureId));
     setPlacements(state);
-    if (!state.some((p) => p.id === selected())) setSelected(null);
+    setSelection((ids) => ids.filter((id) => state!.some((p) => p.id === id)));
   }
 
   // Unsaved changes: the placements differ from those at the last download (or open).
@@ -166,8 +175,27 @@ function createEditor() {
     if (changed || (empty && !current.isNew)) history.checkpoint(current.before);
     if (empty) {
       setPlacements((list) => list.filter((q) => q.id !== p.id));
-      if (selected() === p.id) setSelected(null);
+      deselect(p.id);
     }
+  }
+
+  const boxesOf = (ids: string[]): GroupBox[] =>
+    placements.filter((p) => ids.includes(p.id)).map(({ id, page, x, y, width, height }) => ({ id, page, x, y, width, height }));
+
+  /**
+   * Moves boxes together by the same (dx, dy), each on its own page. The move
+   * is limited so that none of them leaves its page, keeping their arrangement.
+   */
+  function moveGroup(starts: GroupBox[], dx: number, dy: number, tag?: string) {
+    const limited = limitGroupMove(starts, dx, dy, (page) => pages[page - 1]);
+    if (!limited) return;
+    const moves = starts.filter((b) => {
+      const p = placements.find((q) => q.id === b.id);
+      return p && (p.x !== b.x + limited.dx || p.y !== b.y + limited.dy);
+    });
+    if (!moves.length) return;
+    checkpoint(tag);
+    for (const b of moves) setPlacements((p) => p.id === b.id, { x: b.x + limited.dx, y: b.y + limited.dy });
   }
 
   function select(id: string | null) {
@@ -413,14 +441,62 @@ function createEditor() {
       setPlacements((p) => p.id === id, next);
     },
 
-    /** Moves the selected placement by (dx, dy) points; a run of nudges undoes as one step. */
+    /** Moves the selected placements by (dx, dy) points; a run of nudges undoes as one step. */
     nudge(dx: number, dy: number) {
-      const current = placements.find((p) => p.id === selected());
+      const ids = selection();
+      if (!ids.length) return;
+      if (ids.length > 1) {
+        moveGroup(boxesOf(ids), dx, dy, `nudge:${ids.join()}`);
+        return;
+      }
+      const current = placements.find((p) => p.id === ids[0]);
       const size = current && pages[current.page - 1];
       if (!current || !size) return;
       checkpoint(`nudge:${current.id}`);
       const box = { x: current.x + dx, y: current.y + dy, width: current.width, height: current.height };
       setPlacements((p) => p.id === current.id, fixedSize(current) ? keptOnPage(box, size) : moved(current, dx, dy, size));
+    },
+
+    selection,
+    isSelected: (id: string) => selection().includes(id),
+    /** Adds a placement to the selection, or takes it out if it's in it (Ctrl/Cmd/Shift + click). */
+    toggleSelect(id: string) {
+      endEdit();
+      setSelection((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+    },
+    /** Selects everything on a page. */
+    selectAll(page: number) {
+      endEdit();
+      setSelection(placements.filter((p) => p.page === page).map((p) => p.id));
+    },
+    /** Removes every selected placement, as one undo step. */
+    removeSelected() {
+      const ids = selection();
+      if (!ids.length) return;
+      endEdit();
+      const remaining = placements.filter((p) => !ids.includes(p.id));
+      if (remaining.length === placements.length) return;
+      checkpoint();
+      setPlacements(remaining.map((p) => unwrap(p)));
+      setSelection([]);
+    },
+    /** The starting boxes for moving the selection together (see `moveGroup`). */
+    selectionBoxes: () => boxesOf(selection()),
+    /** Moves placements together by (dx, dy) from their starting boxes; changes with the same `tag` undo as one step. */
+    moveGroup: (starts: GroupBox[], dx: number, dy: number, tag?: string) => moveGroup(starts, dx, dy, tag),
+    /** Lines the selection up on one edge or centre of its bounding box, as one undo step. */
+    align(edge: AlignEdge) {
+      const ids = selection();
+      const items = placements.filter((p) => ids.includes(p.id));
+      if (items.length < 2) return;
+      const target = alignTarget(items, edge);
+      checkpoint();
+      for (const p of items) {
+        const size = pages[p.page - 1];
+        if (!size) continue;
+        const box = { ...alignedBox(p, edge, target), width: p.width, height: p.height };
+        setPlacements((q) => q.id === p.id, keptOnPage(box, size));
+      }
     },
 
     /**
@@ -500,12 +576,12 @@ function createEditor() {
         setEditing(null);
         if (before.some((p) => p.id === id)) history.checkpoint(before);
         setPlacements((list) => list.filter((p) => p.id !== id));
-        if (selected() === id) setSelected(null);
+        deselect(id);
         return;
       }
       checkpoint();
       setPlacements((list) => list.filter((p) => p.id !== id));
-      if (selected() === id) setSelected(null);
+      deselect(id);
     },
   };
 }

@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { AlignButtons } from "./AlignButtons";
 import { createAutosave, type DraftDocument } from "./autosave";
 import { documentId } from "./db";
 import { download, editedName } from "./download";
@@ -210,7 +211,7 @@ export function App() {
       ArrowUp: [0, 1], // display space has y up
       ArrowDown: [0, -1],
     };
-    if (editor.selected() && !typing && !mod && e.key in arrows) {
+    if (editor.selection().length && !typing && !mod && e.key in arrows) {
       e.preventDefault();
       const [dx, dy] = arrows[e.key];
       const step = e.shiftKey ? 10 : 1;
@@ -225,9 +226,15 @@ export function App() {
       editor.beginEdit(selected);
       return;
     }
-    if (selected && !typing && (e.key === "Delete" || e.key === "Backspace")) {
+    if (editor.selection().length && !typing && (e.key === "Delete" || e.key === "Backspace")) {
       e.preventDefault();
-      editor.remove(selected);
+      editor.removeSelected();
+      return;
+    }
+    // Ctrl/Cmd + A selects everything on the current page.
+    if (mod && !typing && file() && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      editor.selectAll(page());
       return;
     }
     if (e.key === "Escape") editor.select(null);
@@ -333,6 +340,11 @@ export function App() {
                 <button class="icon-button" title="Redo (Ctrl Shift Z)" aria-label="Redo" disabled={!editor.canRedo()} onClick={() => editor.redo()}>
                   ↷
                 </button>
+                <Show when={editor.selection().length > 1}>
+                  <span class="separator" aria-hidden="true" />
+                  <AlignButtons />
+                  <span class="separator" aria-hidden="true" />
+                </Show>
                 <button
                   class="primary download"
                   title="Download a copy with your changes. The original file is not changed."
