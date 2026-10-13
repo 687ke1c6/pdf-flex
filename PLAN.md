@@ -11,7 +11,7 @@ A web app you can install as a PWA. It opens a PDF, lets you drag your signature
 ## 1. MVP scope
 
 **In scope**
-- Open a PDF using a file picker or by dragging it onto the page (see §5).
+- Open a PDF using a file picker or by dragging it onto the page (see §5)
 - Show its pages with scrolling and zoom.
 - Get a signature three ways: **import** an image (PNG/JPEG), **type** your name in a signature-style font, or **draw** it with a mouse, trackpad, or pen.
 - Keep a **library of saved signatures** in the browser (IndexedDB) for later sessions.
@@ -53,15 +53,15 @@ Work proceeds in small chunks. Each one ends with something you can run and chec
 |---|---|---|---|
 | 0 | Environment | Container has the WASM target, `wasm-pack`, and `qpdf`; workspace and `justfile` exist | ✅ |
 | 1 | Experiment A: native stamping | Stamped test PDFs look right in Chrome and Acrobat | ✅ |
-| 2 | Experiment B: the same code as WASM | A bare page stamps and downloads a PDF in Chrome; WASM size noted | ✅ (pending your Chrome check) |
-| 3 | Experiment C: viewer UI | A SolidJS + pdf.js viewer at `localhost:5173` | ✅ (pending your Chrome check) |
+| 2 | Experiment B: the same code as WASM | A bare page stamps and downloads a PDF in Chrome; WASM size noted | ✅ |
+| 3 | Experiment C: viewer UI | A SolidJS + pdf.js viewer at `localhost:5173` | ✅ |
 | — | **Go/no-go on lopdf** | Continue, or switch to the fallback (§6) | ✅ Go: lopdf stays |
-| 4 | MVP part 1: place and save | **End-to-end:** sign a real PDF in the browser | ✅ (pending your Chrome check) |
-| 5 | Signature library | Saved signatures survive a browser restart; pick, rename, delete | ✅ (pending your Chrome check) |
-| 6 | Create signatures: type and draw | Make a signature from typed text or by drawing, and save it to the library | ✅ (pending your Chrome check) |
-| 7 | Harden the core library | `cargo test` passes against the test-file corpus | ✅ (pending your Chrome check) |
-| 8 | Polish | Undo, keyboard shortcuts, unsaved-changes warning, cross-browser check | ✅ (pending your browser checks) |
-| 9 | PWA, server and container image | `just image` builds an Alpine image; the container serves the app on `localhost:8080`, Chrome installs it, and it works offline | ✅ (pending your image build and Chrome checks) |
+| 4 | MVP part 1: place and save | **End-to-end:** sign a real PDF in the browser | ✅ |
+| 5 | Signature library | Saved signatures survive a browser restart; pick, rename, delete | ✅ |
+| 6 | Create signatures: type and draw | Make a signature from typed text or by drawing, and save it to the library | ✅ |
+| 7 | Harden the core library | `cargo test` passes against the test-file corpus | ✅ |
+| 8 | Polish | Undo, keyboard shortcuts, unsaved-changes warning, cross-browser check | ✅ |
+| 9 | PWA, server and container image | `just image` builds an Alpine image; the container serves the app on `localhost:8080`, Chrome installs it, and it works offline | ✅ |
 | 10 | Deploy to the Pi (later) | Installed from a phone or laptop via the Pi, over HTTPS through Tailscale | ⬜ |
 
 ### Chunk 0: Environment ✅
