@@ -1,5 +1,4 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
-import { AlignButtons } from "./AlignButtons";
 import { createAutosave, type DraftDocument } from "./autosave";
 import { documentId } from "./db";
 import { download, editedName } from "./download";
@@ -355,11 +354,6 @@ export function App() {
                 <button class="icon-button" title="Redo (Ctrl Shift Z)" aria-label="Redo" disabled={!editor.canRedo()} onClick={() => editor.redo()}>
                   ↷
                 </button>
-                <Show when={editor.selection().length > 1}>
-                  <span class="separator" aria-hidden="true" />
-                  <AlignButtons />
-                  <span class="separator" aria-hidden="true" />
-                </Show>
                 <button
                   class="primary download"
                   title="Download a copy with your changes. The original file is not changed."

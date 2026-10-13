@@ -60,6 +60,7 @@ Each chunk ends with something you can run and check, then a review and a commit
 | 6 | Shapes and symbols | Draw each shape and symbol, style it, save; it matches the preview in Chrome and Acrobat | ✅ (pending your check) |
 | 7 | Multi-select and align | Ctrl+click several items; delete, nudge, drag and align them together | ✅ |
 | 8 | Tools: Select, Hand and a quick bar | One active tool decides what a page click does, in every tool; the quick bar switches between Select, Hand and the last tool | ✅ |
+| 9 | Selection panel | Selecting several items switches to Select and opens a panel with align and delete; the top bar loses its align buttons | ✅ (pending your check) |
 
 ### Chunk 1: Tool rail and panels
 A UI-only refactor; no behaviour changes.
@@ -262,6 +263,21 @@ Added after chunk 7: clicking the page did nothing with the Signatures panel ope
   5. Shortcuts S, T, R, V, H, and Escape stepping back. They don't fire while typing.
   6. With an empty signature library, a click with Signatures opens New signature.
   7. Below 640 px: picking Text in the quick bar lets you click to add text with the panel closed; the rail opens its settings.
+
+### Chunk 9: Selection panel
+Added after chunk 8: the align buttons move from the top bar into a panel beside the selection.
+- **Selecting a second item** (Ctrl/Cmd/Shift+click, a selection box, or Ctrl+A) switches to **Select**. Any open tool panel slides away and the **Selection** panel slides in, in the same place. Back below two items, it slides away; you stay in Select. The quick bar's third button still brings the previous tool back.
+- **Selection panel** (`SelectionPanel.tsx`): "3 selected"; **Align** as two labelled rows (Left · Centre · Right, Top · Middle · Bottom), lining items up on the edge or centre of the whole selection; **Delete selected**. Room later for distributing evenly and restyling several items at once.
+- **No rail button:** the panel follows the selection rather than being chosen. It shows on narrow screens too, since it's the only place aligning lives; Escape or a click on empty space clears the selection and closes it.
+- While the panel slides closed it keeps showing what it showed, whichever panel it was.
+- **Top bar:** back to undo, redo and Download.
+- **Known:** the panel floats over the left of the page, so items near the left edge can be under it; pan or scroll to see them. A small floating bar above the selection is the fallback if this gets in the way.
+- **Your checks:**
+  1. With Text (or any tool) active, Ctrl+click two items: the tool switches to Select, the Text panel slides away and the Selection panel slides in.
+  2. Each align button, Delete selected, and undo.
+  3. Ctrl+click one item out again: the panel slides away and Select stays active. Escape does the same.
+  4. A selection box over several items, and Ctrl+A, open it too.
+  5. The top bar no longer shows align buttons.
 
 ---
 

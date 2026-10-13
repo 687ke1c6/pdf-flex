@@ -98,6 +98,14 @@ function createEditor() {
     return ids.length === 1 ? ids[0] : null;
   };
   const setSelected = (id: string | null) => setSelection(id ? [id] : []);
+  /** Sets the selection; picking several switches to the Select tool, whose panel then shows them. */
+  function setMany(ids: string[]) {
+    setSelection(ids);
+    if (ids.length > 1 && tool() !== "select") {
+      setToolSignal("select");
+      saveTool("select");
+    }
+  }
   const deselect = (id: string) => setSelection((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : ids));
   const [tool, setToolSignal] = createSignal<Tool>(savedTool());
   const [lastPanelTool, setLastPanelTool] = createSignal<PanelTool>(isPanelTool(tool()) ? (tool() as PanelTool) : savedPanelTool());
@@ -243,7 +251,7 @@ function createEditor() {
     selectIds(ids: string[]) {
       endEdit();
       const same = ids.length === selection().length && ids.every((id, i) => selection()[i] === id);
-      if (!same) setSelection(ids);
+      if (!same) setMany(ids);
     },
 
     /** The selected placement, if it's a shape. */
@@ -482,12 +490,13 @@ function createEditor() {
     /** Adds a placement to the selection, or takes it out if it's in it (Ctrl/Cmd/Shift + click). */
     toggleSelect(id: string) {
       endEdit();
-      setSelection((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+      const ids = selection();
+      setMany(ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
     },
     /** Selects everything on a page. */
     selectAll(page: number) {
       endEdit();
-      setSelection(placements.filter((p) => p.page === page).map((p) => p.id));
+      setMany(placements.filter((p) => p.page === page).map((p) => p.id));
     },
     /** Removes every selected placement, as one undo step. */
     removeSelected() {

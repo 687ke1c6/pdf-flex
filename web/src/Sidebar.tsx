@@ -1,10 +1,14 @@
 // The left side: the tool rail and the active tool's panel.
 import { createEffect, createSignal, Match, onCleanup, Switch } from "solid-js";
 import { useEditor } from "./editor";
+import { SelectionPanel } from "./SelectionPanel";
 import { ShapesPanel } from "./ShapesPanel";
 import { SignaturesPanel } from "./SignaturesPanel";
 import { TextPanel } from "./TextPanel";
 import { isPanelTool, ToolRail, type PanelTool } from "./ToolRail";
+
+/** What the panel can show: a tool's settings, or the selection. */
+type Panel = PanelTool | "selection";
 
 interface Props {
   currentPage: number;
@@ -29,16 +33,27 @@ export function Sidebar(props: Props) {
   onCleanup(() => media.removeEventListener("change", onMedia));
   const [narrowOpen, setNarrowOpen] = createSignal(false);
 
-  const open = () => isPanelTool(editor.tool()) && (narrow() ? narrowOpen() : true);
+  /** Several items selected: the Select tool's panel shows them (on any screen: it's where aligning lives). */
+  const selecting = () => editor.tool() === "select" && editor.selection().length > 1;
+  /** What the panel shows right now, if it's open. */
+  const current = (): Panel | null => {
+    const tool = editor.tool();
+    if (selecting()) return "selection";
+    if (isPanelTool(tool) && (narrow() ? narrowOpen() : true)) return tool;
+    return null;
+  };
+  const open = () => current() !== null;
+  // While the panel slides closed, it keeps showing what it showed.
+  const [lastShown, setLastShown] = createSignal<Panel>(editor.lastPanelTool());
+  createEffect(() => {
+    const now = current();
+    if (now) setLastShown(now);
+  });
   let panel!: HTMLDivElement;
   // Closed, the panel can't be tabbed into or read out.
   createEffect(() => (panel.inert = !open()));
 
-  /** Whose settings the panel shows: the active tool's, or while it slides closed, the last one's. */
-  const shown = () => {
-    const tool = editor.tool();
-    return isPanelTool(tool) ? tool : editor.lastPanelTool();
-  };
+  const shown = () => current() ?? lastShown();
 
   function select(next: PanelTool) {
     if (narrow()) {
@@ -54,7 +69,7 @@ export function Sidebar(props: Props) {
 
   return (
     <aside class="sidebar">
-      <ToolRail active={editor.tool()} open={open()} onSelect={select} />
+      <ToolRail active={editor.tool()} open={open() && current() !== "selection"} onSelect={select} />
       {/* Always there, so it can slide in and out; closed, it's out of reach of the keyboard and screen readers. */}
       <div class="sidebar-panel" classList={{ open: open() }} ref={panel}>
         <section class="tool-panel">
@@ -67,6 +82,9 @@ export function Sidebar(props: Props) {
             </Match>
             <Match when={shown() === "shapes"}>
               <ShapesPanel />
+            </Match>
+            <Match when={shown() === "selection"}>
+              <SelectionPanel />
             </Match>
           </Switch>
         </section>

@@ -28,12 +28,6 @@ html, body, #root { height: 100%; margin: 0; }
 .edit-actions { display: inline-flex; align-items: center; gap: 0.25rem; }
 .icon-button { padding: 0 0.55rem; font-size: 1.1rem; }
 button.download { margin-left: 0.25rem; }
-.edit-actions .separator { align-self: stretch; width: 1px; margin: 0.15rem 0.2rem; background: var(--border); }
-.align-buttons { display: inline-flex; gap: 0.15rem; }
-.align-buttons .icon-button { padding: 0 0.35rem; }
-.align-buttons svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-linecap: round; }
-.align-buttons .axis { stroke-width: 1.5; }
-.align-buttons .bars { stroke-width: 3.5; }
 button.download svg { width: 1.1rem; height: 1.1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 640px) {
   button.download .label { display: none; }
@@ -197,6 +191,16 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .text-editor textarea { background: transparent; color: inherit; caret-color: currentColor; resize: none; outline: none; }
 .text-backdrop { color: transparent; pointer-events: none; }
 .text-backdrop mark { color: transparent; background: rgb(220 38 38 / 0.15); text-decoration: underline wavy #dc2626; }
+
+/* Selection panel: arranging several items */
+.selection-panel h3 { font-size: 0.8rem; font-weight: 600; color: var(--muted); margin: 0.9rem 0 0.4rem; }
+.align-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.3rem; margin-bottom: 0.3rem; }
+.align-group button { height: auto; flex-direction: column; gap: 0.15rem; padding: 0.35rem 0.2rem; font-size: 0.8rem; }
+.align-group svg { width: 1.3rem; height: 1.3rem; fill: none; stroke: currentColor; stroke-linecap: round; }
+.align-group .axis { stroke-width: 1.5; }
+.align-group .bars { stroke-width: 3.5; }
+button.danger { color: var(--danger); margin-top: 0.8rem; }
+button.danger:hover { border-color: var(--danger); background: var(--danger-bg); }
 
 /* Tools: cursors, the selection box, and the quick bar */
 .page-overlay.place-signature { cursor: copy; }
