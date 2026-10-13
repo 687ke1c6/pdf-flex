@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Full-bleed background so the same art works as a maskable icon (safe zone: central 80%). -->
+  <rect width="512" height="512" fill="#2563eb"/>
+  <!-- A sheet of paper. -->
+  <rect x="136" y="96" width="240" height="320" rx="16" fill="#ffffff"/>
+  <!-- Signature scribble over a signing line. -->
+  <path d="M168 318 C 190 250, 214 250, 206 300 S 236 330, 252 282 S 280 262, 284 300 S 316 318, 344 286"
+        fill="none" stroke="#1e3a8a" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="168" y1="350" x2="344" y2="350" stroke="#94a3b8" stroke-width="8" stroke-linecap="round"/>
+  <!-- Text lines. -->
+  <line x1="168" y1="146" x2="344" y2="146" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/>
+  <line x1="168" y1="182" x2="300" y2="182" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/>
+</svg>

@@ -61,7 +61,7 @@ Work proceeds in small chunks. Each one ends with something you can run and chec
 | 6 | Create signatures: type and draw | Make a signature from typed text or by drawing, and save it to the library | ✅ (pending your Chrome check) |
 | 7 | Harden the core library | `cargo test` passes against the test-file corpus | ✅ (pending your Chrome check) |
 | 8 | Polish | Undo, keyboard shortcuts, unsaved-changes warning, cross-browser check | ✅ (pending your browser checks) |
-| 9 | PWA, server and container image | `just image` builds an Alpine image; the container serves the app on `localhost:8080`, Chrome installs it, and it works offline | 🔜 |
+| 9 | PWA, server and container image | `just image` builds an Alpine image; the container serves the app on `localhost:8080`, Chrome installs it, and it works offline | ✅ (pending your image build and Chrome checks) |
 | 10 | Deploy to the Pi (later) | Installed from a phone or laptop via the Pi, over HTTPS through Tailscale | ⬜ |
 
 ### Chunk 0: Environment ✅
@@ -190,7 +190,41 @@ Already done in chunk 1: multiple placements sharing one image, rotation (0/90/1
   - **Chrome:** drag a signature from one page to the next, including at 50% zoom with several pages visible. Undo and redo a drag, a resize, a nudge run, and a delete. Close the tab with unsaved placements, then do the same after downloading.
   - **Spot-check** Edge, Firefox and Safari. On iOS, check touch drawing and dragging a placement, including across pages.
 
-### Chunk 9: PWA, server and container image
+### Chunk 9: PWA, server and container image ✅
+**As built**
+- **Dev Samples menu:** it now also lists the test corpus (`corpus/real`, `corpus/generated`) and the stamped corpus outputs from the last `cargo test` (`corpus-stamped`), grouped by folder. It is dev-only; remove it before release.
+- **PWA:** `vite-plugin-pwa` 1.3.0 (2.0.0 was under two weeks old). It precaches 30 files (about 2 MB). pdf.js data is cached on first use, and the licence page is fetched when opened, not precached.
+  - **Icons:** `web/public/icon.svg`, rendered to 192 px, 512 px (also used as the maskable icon) and a 180 px Apple touch icon.
+  - **Update prompt:** "A new version is available · Reload · Later" (`web/src/pwa.tsx`). No service worker runs in dev.
+- **About** (toolbar): the privacy statement and a link to `licenses.txt`. The file is generated at build time from the runtime npm packages (including the fonts' OFL text) and the Rust crates compiled into the WASM (via `cargo metadata`). Each package is listed once, and each distinct licence text appears once.
+- **Server** (`crates/pdf-sign-server`): axum 0.8.9, tower-http 0.7.1, and tokio 1.53.1 (1.53.2 was too new).
+  - Configured with `--addr` and `--dir`, or `PDF_SIGN_ADDR` and `PDF_SIGN_DIR`. It refuses to start without an `index.html`.
+  - Logs one line per request. Shuts down gracefully on SIGTERM.
+  - The release binary is 2.7 MB.
+  - **CSP:** `style-src` also allows `'unsafe-inline'`, because the UI and pdf.js set element styles. `script-src` is `'self' 'wasm-unsafe-eval'` with no `'unsafe-eval'`. pdf.js 6 doesn't use eval at all.
+  - **Tests:** 7 in-process tests for headers, MIME types, cache rules, compression, the health check, and path traversal. They were also checked live against the real `web/dist`.
+- **Image:** a multi-stage `Dockerfile` plus `.dockerignore`. Image versions are build arguments at the top (Alpine 3.22, Rust 1.98, Bun 1.4.3). BuildKit builds the `wasm` and `server` stages in parallel.
+  - **`wasm`** (`rust:${RUST_VERSION}-alpine${ALPINE_VERSION}`): adds the wasm32 target and runs `wasm-pack build` plus `licenses.sh`, the same commands as `just wasm`.
+    - Adding the target retries up to five times. Its download from static.rust-lang.org was seen failing mid-transfer with an HTTP/2 stream error, from the dev container too, so it isn't Docker-specific.
+    - `wasm-pack` 0.15.0 and the `wasm-bindgen-cli` version from `Cargo.lock` are installed with cargo, and `wasm-opt` comes from Alpine's `binaryen`. wasm-pack's own downloads are glibc builds.
+  - **`server`** (same Rust base): builds `pdf-sign-server`. It needs no wasm32 target.
+  - **`web`** (`oven/bun:${BUN_VERSION}-alpine`): runs `bun install` and `bun run build` (typecheck, then Vite), using the WASM package from the `wasm` stage. TypeScript 7's compiler is a static binary, and Vite's native parts ship musl builds, so both run on Alpine.
+  - **`runner`** (`alpine:${ALPINE_VERSION}`, non-root): only the server binary and `web/dist`.
+  - Cache mounts keep the cargo registry, each Rust stage's `target/`, and Bun's cache between builds.
+- **Crate licences:** `crates/pdf-stamp-wasm/licenses.sh` (POSIX sh) runs as part of `just wasm`. It writes `pkg/crate-licenses.txt` from `cargo tree` and the registry sources, and the web build reads that file. The Bun stage has no cargo, which is why the list is made in the Rust stage. It lists only the crates shipped in the WASM: no proc-macros, and no server dependencies (the old `cargo metadata` list wrongly included zlib-rs).
+- **Recipes:** `just serve`, `just image` and `just image-run`.
+- **Dev container:** the `docker-outside-of-docker` feature, with port 8080 forwarded.
+- **Not verified here:** the dev container had no Docker, so **the image has not been built yet**. Install, offline use and CSP violations haven't been checked in a browser either.
+- **Your checks:**
+  1. Rebuild the dev container.
+  2. Run `just image && just image-run` and fix anything the first build turns up.
+  3. In Chrome at `localhost:8080`, install the app. Open and sign a PDF with DevTools open: the console should show no CSP errors, and the network tab no requests while opening or saving.
+  4. Stop the container, reopen the installed app, and sign a PDF offline.
+  5. Rebuild after a small change and confirm the "new version" prompt appears.
+  6. `just serve` tests the same server without Docker.
+
+**Plan**
+
 **PWA**
 - Manifest (name, colours, `display: standalone`) and icons: 192 and 512 px, plus a maskable icon and an Apple touch icon.
 - A service worker from `vite-plugin-pwa` (Workbox `generateSW`):

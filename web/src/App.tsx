@@ -5,6 +5,7 @@ import { openPdf, type LoadedPdf } from "./pdf";
 import { Sidebar } from "./Sidebar";
 import { inspectPdf, sameLayout, stampPdf } from "./stamper";
 import { clampZoom, stepZoom } from "./zoom";
+import { AboutDialog, UpdatePrompt } from "./pwa";
 import { Viewer, type ViewerApi } from "./Viewer";
 
 /** An opened file. `bytes` is the untouched original, which is what gets stamped. */
@@ -24,6 +25,7 @@ export function App() {
   const [dragging, setDragging] = createSignal(false);
   const [samples, setSamples] = createSignal<string[]>([]);
   const [saving, setSaving] = createSignal(false);
+  const [about, setAbout] = createSignal(false);
   let viewer: ViewerApi | undefined;
   let fileInput!: HTMLInputElement;
 
@@ -66,6 +68,16 @@ export function App() {
     const res = await fetch(`/samples/${path}`);
     await open(path.split("/").pop()!, new Uint8Array(await res.arrayBuffer()));
   }
+
+  /** Samples grouped by folder, e.g. "corpus/real" → ["corpus/real/a.pdf", …]. */
+  const sampleGroups = () => {
+    const groups = new Map<string, string[]>();
+    for (const path of samples()) {
+      const group = path.slice(0, path.lastIndexOf("/"));
+      groups.set(group, [...(groups.get(group) ?? []), path]);
+    }
+    return [...groups];
+  };
 
   const zoomTo = (z: number) => setZoom(clampZoom(z));
 
@@ -226,7 +238,13 @@ export function App() {
             }}
           >
             <option value="">Samples…</option>
-            <For each={samples()}>{(s) => <option value={s}>{s}</option>}</For>
+            <For each={sampleGroups()}>
+              {([group, paths]) => (
+                <optgroup label={group}>
+                  <For each={paths}>{(path) => <option value={path}>{path.slice(group.length + 1)}</option>}</For>
+                </optgroup>
+              )}
+            </For>
           </select>
         </Show>
 
@@ -264,7 +282,18 @@ export function App() {
             </>
           )}
         </Show>
+        <Show when={!file()}>
+          <span class="spacer" />
+        </Show>
+        <button class="link" onClick={() => setAbout(true)}>
+          About
+        </button>
       </header>
+
+      <UpdatePrompt />
+      <Show when={about()}>
+        <AboutDialog onClose={() => setAbout(false)} />
+      </Show>
 
       <Show when={error()}>
         <div class="error" role="alert">

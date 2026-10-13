@@ -24,7 +24,7 @@ for (const dir of ["real", "generated"]) {
 
     let viewer: string;
     try {
-      const task = getDocument({ data: new Uint8Array(bytes), verbosity: 0, isEvalSupported: false });
+      const task = getDocument({ data: new Uint8Array(bytes), verbosity: 0 });
       const doc = await task.promise;
       const sizes: string[] = [];
       for (let i = 1; i <= doc.numPages; i++) {

@@ -145,3 +145,5 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* Guide line and hint are page elements, not canvas pixels, so they're never exported. */
 .pad-baseline { position: absolute; left: 8%; right: 8%; bottom: 28%; border-bottom: 1px dashed #c8cbd0; pointer-events: none; }
 .pad-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; }
+
+.update { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.75rem; background: #e0ecff; border-bottom: 1px solid var(--border); }

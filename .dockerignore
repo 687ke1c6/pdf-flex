@@ -1,0 +1,12 @@
+# Build outputs and dependencies are recreated inside the image.
+.git
+target
+out
+**/node_modules
+web/dist
+crates/pdf-stamp-wasm/pkg
+crates/pdf-stamp-wasm/demo/pkg
+crates/pdf-stamp-wasm/demo/samples
+# Test data isn't needed to build.
+crates/pdf-stamp/tests/corpus
+.devcontainer

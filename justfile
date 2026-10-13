@@ -33,6 +33,7 @@ stamp *args:
 # Build the WASM package into crates/pdf-stamp-wasm/pkg (used by web/ and the demo)
 wasm:
     wasm-pack build crates/pdf-stamp-wasm --target web --release --no-pack
+    sh crates/pdf-stamp-wasm/licenses.sh
     @ls -l crates/pdf-stamp-wasm/pkg/pdf_stamp_wasm_bg.wasm | awk '{printf "wasm size: %.0f KB\n", $5/1024}'
 
 # Run the WASM build headlessly under Bun and validate its output; check it agrees with pdf.js on the corpus
@@ -61,3 +62,15 @@ dev: fixtures wasm
 # Typecheck and build the web app into web/dist
 build: wasm
     cd web && bun install --frozen-lockfile && bun run build
+
+# Serve the built app with the production server on http://localhost:8080
+serve: build
+    cargo run -q --release -p pdf-sign-server -- --dir web/dist --addr 0.0.0.0:8080
+
+# Build the container image pdf-sign:latest (Alpine builder + runner; see Dockerfile)
+image:
+    docker build -t pdf-sign:latest .
+
+# Run the container image on http://localhost:8080 (Ctrl+C to stop)
+image-run:
+    docker run --rm --init -p 8080:8080 --name pdf-sign pdf-sign:latest
