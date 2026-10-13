@@ -3,6 +3,7 @@
 // The screen is CSS pixels from the page's top-left, y down.
 
 import type { PageSize } from "./pdf";
+import { hexToRgb, layoutText, standardFont, type TextStyle } from "./textLayout";
 
 /** What every placed item has: where it is. Moving, clamping and undo only use this. */
 interface PlacedBox {
@@ -22,8 +23,16 @@ export interface ImagePlacement extends PlacedBox {
   signatureId: string;
 }
 
+/** Text, written into the PDF as real text. Its box always fits its layout (see textLayout.ts). */
+export interface TextPlacement extends PlacedBox {
+  kind: "text";
+  /** Lines separated by `\n`. */
+  text: string;
+  style: TextStyle;
+}
+
 /** Anything placed on a page. Each kind adds what it draws. */
-export type Placement = ImagePlacement;
+export type Placement = ImagePlacement | TextPlacement;
 export type PlacementKind = Placement["kind"];
 
 export type Box = Pick<PlacedBox, "x" | "y" | "width" | "height">;
@@ -45,7 +54,7 @@ export const MIN_WIDTH = 20;
 export const MIN_SIDE = 2;
 
 /** Whether resizing keeps the aspect ratio. Free kinds (shapes, later) lock it only with Shift. */
-export const keepsAspect = (kind: PlacementKind): boolean => kind === "image";
+export const keepsAspect = (kind: PlacementKind): boolean => kind === "image" || kind === "text";
 
 /** Where a box appears on screen, relative to its page's top-left. */
 export function toCss(box: Box, page: PageSize, scale: number): CssBox {
@@ -76,6 +85,16 @@ export function clampToPage(box: Box, page: PageSize): Box {
 }
 
 /** A box of the given width and aspect ratio (width / height), centred on `center`. */
+/**
+ * Moves a box fully onto the page without resizing it (its top-left corner
+ * wins if it's larger than the page). For boxes whose size can't change, like text.
+ */
+export function keptOnPage(box: Box, page: PageSize): Box {
+  const x = Math.max(0, Math.min(box.x, page.width - box.width));
+  const y = Math.min(page.height - box.height, Math.max(box.y, 0));
+  return { ...box, x, y };
+}
+
 export function centeredAt(center: Point, width: number, aspect: number, page: PageSize): Box {
   const height = width / aspect;
   return clampToPage({ x: center.x - width / 2, y: center.y - height / 2, width, height }, page);
@@ -133,8 +152,34 @@ export function resizedFree(box: Box, corner: Corner, pointer: Point, page: Page
   };
 }
 
+/** The standard PDF fonts `pdf-stamp` writes text in, by PostScript name. */
+export type StandardFont =
+  | "Helvetica"
+  | "Helvetica-Bold"
+  | "Helvetica-Oblique"
+  | "Helvetica-BoldOblique"
+  | "Times-Roman"
+  | "Times-Bold"
+  | "Times-Italic"
+  | "Times-BoldItalic"
+  | "Courier"
+  | "Courier-Bold"
+  | "Courier-Oblique"
+  | "Courier-BoldOblique";
+
 /** What a placement draws, as `pdf-stamp`'s `Item` (serde: tagged by `kind`). */
-export type StampItem = { kind: "image"; image: number };
+export type StampItem =
+  | { kind: "image"; image: number }
+  | {
+      kind: "text";
+      font: StandardFont;
+      /** Points. */
+      size: number;
+      /** 0–255 RGB. */
+      color: [number, number, number];
+      /** Baseline starts, in points from the box's bottom-left corner. */
+      lines: { text: string; x: number; y: number }[];
+    };
 
 /** A placement as the WASM `stamp` function takes it: `pdf-stamp`'s `Placement`. */
 export interface StampPlacement extends Box {
@@ -152,6 +197,16 @@ export function toStampArgs(placements: Placement[]): { signatureIds: string[]; 
     switch (p.kind) {
       case "image":
         return { kind: "image", image: signatureIds.indexOf(p.signatureId) };
+      case "text": {
+        const { lines } = layoutText(p.text, p.style);
+        return {
+          kind: "text",
+          font: standardFont(p.style),
+          size: p.style.size,
+          color: hexToRgb(p.style.color),
+          lines: lines.filter((l) => l.text).map(({ text, x, y }) => ({ text, x, y })),
+        };
+      }
     }
   };
   return {

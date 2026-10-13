@@ -53,8 +53,12 @@ pub fn inspect(pdf: &[u8]) -> Result<Inspection, JsError> {
 /// - `image_lengths`: the byte length of each image in `images`, in order.
 /// - `placements`: an array of `{ page, x, y, width, height, item }` objects.
 ///   `page` is 1-based; the rest are display-space points from the bottom-left
-///   of the page as shown. `item` is what to draw: `{ kind: "image", image }`,
-///   where `image` indexes the images.
+///   of the page as shown. `item` is what to draw:
+///   - `{ kind: "image", image }`, where `image` indexes the images;
+///   - `{ kind: "text", font, size, color, lines }`: `font` is a standard
+///     font's PostScript name (`"Helvetica"`, `"Times-Bold"`, …), `color` is
+///     `[r, g, b]` in 0–255, and `lines` are `{ text, x, y }` baselines
+///     relative to the box's bottom-left corner.
 ///
 /// Throws on invalid input.
 #[wasm_bindgen]

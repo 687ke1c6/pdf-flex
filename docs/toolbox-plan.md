@@ -9,7 +9,7 @@ This phase turns it into a small general PDF editor: **text** first, then **shap
 ## 1. Scope
 
 **In scope**
-- A **tool rail** on the left: Signatures, Text, Shapes. Each tool has its own panel; Save, undo/redo and the list of placed items stay put whatever tool is open
+- A **tool rail** on the left: Signatures, Text, Shapes. Each tool has its own panel; Save, undo/redo and the list of placed items stay put whatever tool is open.
 - **Text** written into the PDF as real text: sharp at any zoom, selectable, searchable and copyable in any viewer.
   - Fonts: Helvetica, Times and Courier (regular, bold, italic, bold italic), the PDF standard fonts, so nothing needs embedding.
   - Size, colour, multiple lines (Enter), left/centre/right alignment.
@@ -53,10 +53,11 @@ Each chunk ends with something you can run and check, then a review and a commit
 | # | Chunk | Done when | Status |
 |---|---|---|---|
 | 1 | Tool rail and panels | Signing works exactly as before, from the new layout | ✅ |
-| 2 | Placements of different kinds | All existing tests pass on the new model; image-only output renders identically to before | ✅ (pending your check) |
-| 3 | Text in `pdf-stamp` | `cargo test` stamps text on every corpus file; `pdftotext` reads it back exactly | 🔜 |
-| 4 | Text tool in the app | Add and edit text in the browser; in the download it is selectable, searchable and where the preview showed it | ⬜ |
-| 5 | Image text (other fonts) | Text in a script font saves as a crisp image, positioned as previewed | ⬜ |
+| 1b | Top bar actions and status bar | Undo/redo and Download stay visible with the panel collapsed; the placed list opens from the status bar | ✅ (pending your check) |
+| 2 | Placements of different kinds | All existing tests pass on the new model; image-only output renders identically to before | ✅ |
+| 3 | Text in `pdf-stamp` | `cargo test` stamps text on every corpus file; `pdftotext` reads it back exactly | ✅ |
+| 4 | Text tool in the app | Add and edit text in the browser; in the download it is selectable, searchable and where the preview showed it | ✅ (pending your check) |
+| 5 | Image text (other fonts) | Text in a script font saves as a crisp image, positioned as previewed | 🔜 |
 | 6 | Shapes, symbols and cover-up box | Draw each shape and symbol, style it, save; it matches the preview in Chrome and Acrobat | ⬜ |
 
 ### Chunk 1: Tool rail and panels
@@ -82,6 +83,17 @@ A UI-only refactor; no behaviour changes.
   3. Click the Signatures button: the panel hides and the document widens; click again to bring it back.
   4. Download: the file is `<name>-edited.pdf`.
   5. Narrow the window below 640 px and reload: the panel starts closed and opens over the document.
+
+### Chunk 1b: Top bar actions and status bar
+Added after chunk 4: the shared area under the tool panel (placed list, undo/redo, Download) collapsed with the panel and took height from every tool.
+- **Top bar:** `↶ ↷ [Download PDF] │ Page … zoom …`. Undo/redo and Download sit before a separator, viewing controls after it. Download keeps the primary style, is disabled while nothing is placed, and its tooltip says the original isn't changed. Below 640 px it shows only its icon.
+- **Status bar** (`StatusBar.tsx`, only with a PDF open):
+  - **"3 items ▴"** opens **On this document** above the bar: click an entry to go to its page and select it (the list stays open); × removes. Escape or a click outside the status bar closes it. No undo/redo there; the top bar has them.
+  - **Unsaved changes** (●) or **Downloaded**, from the same state as the close-tab warning.
+  - **A hint for the moment** on the right (hidden below 640 px): editing, selected text, any selection, or the open tool. The hints that were in the sidebar and the Text panel moved here.
+- **Sidebar** is now only the rail and the tool panel.
+- **Verified (no browser):** typecheck, 47 web tests and the build pass.
+- **Your checks:** collapse the panel and check undo, redo and Download still work; open the items list, step through entries, remove one, close it with Escape and by clicking outside; watch Unsaved changes → Downloaded after a download; check the hints change as you select, edit text and switch tools; narrow the window below 640 px.
 
 ### Chunk 2: Placements of different kinds
 The model change everything after this builds on, made with only the existing kind so it can be verified on its own.
@@ -119,6 +131,26 @@ The model change everything after this builds on, made with only the existing ki
   - Corpus: every file that should sign also takes a text placement; `qpdf --check` passes and `pdftotext` reads the text back.
 - **CLI:** `just stamp-text in.pdf "Hello" out.pdf --page 1 --at X,Y --size 12`.
 
+**As built**
+- **`text.rs`:** `Font` (the 12 standard text fonts, serialised by PostScript name, e.g. `"Times-Bold"`; `Font::ALL`, `from_base_font`, `family`), `Line { text, x, y }`, `winansi(char)` and `literal(text)`, which builds the escaped PDF string or returns the first unsupported character.
+- **`Item::Text { font, size, color: [u8; 3], lines }`:** colour is 0–255 RGB. The box only positions the text (lines are relative to its bottom-left corner) and is still validated like any box. Empty lines are skipped; an empty `lines` is allowed.
+- **Drawing:** `q <display→user> cm 1 0 0 1 x y cm BT /PdfFlexF0 12 Tf r g b rg 1 0 0 1 lx ly Tm (…) Tj … ET Q`, one text object per placement, each line placed by its own text matrix. The content stream is now built as bytes (WinAnsi isn't UTF-8).
+- **Resources:** `add_xobject_resource` became `add_resource(…, Resource::XObject | Resource::Font, …)`. Image names are unchanged (`PdfFlex0`, …), fonts are `PdfFlexF0`, …; signature-only output is still byte-identical to before.
+- **Errors:** `UnsupportedCharacter { character, font }` ("The character 'Ł' can't be written in Times. Use image text for other characters."). A non-finite or non-positive size, or a non-finite line position, is `BadPlacement`. Everything is checked before the document is changed.
+- **Tests:**
+  - 6 unit tests in `text.rs`: the encoding table, controls and other scripts refused, escaping, font names.
+  - `tests/text.rs` (7): on every fixture, `pdftotext -cropbox -bbox` finds the first word upright, about one font size tall, with its baseline exactly where it was placed (`-cropbox` makes poppler report display-space positions, CropBox offsets included); two lines with `“ ” – € ½ é ( ) \` read back exactly; fonts are added once per document and named per page next to inherited ones; images and text share a page; empty text; refused characters; invalid sizes.
+  - Corpus: every page of every file that should sign also gets a line of black text on its black box (so renders are unaffected), and `pdftotext` must find it on that page.
+  - `just wasm-smoke` stamps an image and text together, checks the text error, and reads the text back with `pdftotext`.
+- **TypeScript:** `StampItem` in `placement.ts` gained the text variant and a `StandardFont` type, mirroring the Rust `Item`, ready for chunk 4.
+- **CLI:** `just stamp-text in.pdf "Jane Smith\n13 Oct 2026" out.pdf --at 400,80 --size 12 --font Times-Roman --color 1e3a8a`. `--at` is the first baseline; `\n` starts a new line 1.2 × size below. The recipe uses `[positional-arguments]` so quoted text stays one argument.
+- **Size:** WASM 1,080,951 bytes raw, up 21.3 KB.
+- **Verified (no browser):** `just test` (15 unit, 13 stamping, 7 text, 2 corpus, 7 server tests in Rust; 29 web), `just lint`, `cargo fmt`, `just wasm-smoke` and `just build` pass.
+- **Your checks:** open these in Chrome and Acrobat Reader. The text should look right, sit where expected, and be selectable, searchable (Ctrl F) and copyable with accents and € intact:
+  1. `out/text-cli.pdf` (rotated page, two lines, Times Bold, dark blue).
+  2. `out/wasm-smoke.pdf` (written by the WASM build).
+  3. A few corpus outputs in `target/tmp/corpus/`, e.g. `real--irs-w9-xfa-form.pdf`: search for `pdfflex-1`. The text is black on the black box, so select it to see it.
+
 ### Chunk 4: Text tool in the app
 - **Metrics** (`web/src/fonts/metrics.ts`, generated by a script from Adobe's Core 14 AFM files and committed): advance widths for the 12 fonts over WinAnsi, plus ascender and descender. A unit test checks a few against known values.
 - **Layout** (`textLayout.ts`, pure, unit-tested): text + font + size + alignment → box size and each line's baseline position. Line height 1.2 × size. Used for the preview, the box, and the stamp arguments.
@@ -129,6 +161,27 @@ The model change everything after this builds on, made with only the existing ki
 - **Unsupported characters** are underlined in red while editing, with a hint offering image text (chunk 5). Save refuses with the Rust message if any slip through.
 - **Placed list** shows the first words: "“Jane Smith” · page 2".
 - **Your check:** add text on a normal and a rotated page in each font; download and, in Chrome and Acrobat, check it sits where the preview showed, and can be selected, searched (Ctrl F) and copied.
+
+**As built**
+- **Metrics:** `web/scripts/font-metrics.ts <afm dir>` writes `src/fonts/metrics.ts` (committed): widths of the 12 fonts over WinAnsi bytes, ascender and descender, with Adobe's notice in the header. The AFMs came from the `pdfkit` 0.20.2 npm package (not a dependency; only used to generate). The WinAnsi glyph-name table was cross-checked against pdfkit's: they differ only at 0x9F, where pdfkit has `ydieresis` and the PDF spec (and `pdf-stamp`) have `Ydieresis` (Ÿ). The notice is also added to `licenses.txt` at build time.
+- **`winansi.ts`** mirrors the Rust table; **`textLayout.ts`** has the style (`family`, `bold`, `italic`, `size`, `color`, `align`), `standardFont`, `layoutText`, `relaidOut` (re-layout keeping a chosen corner fixed), `resizedTextSize`, `hexToRgb`.
+- **Baselines:** where a baseline sits in its 1.2 × size line follows the CSS line box of the preview font (vertical metrics read from the font files: Arimo and Cousine set USE_TYPO_METRICS and Tinos's hhea and Windows values agree, so it's the same on every OS). So the textarea's text and the finished preview line up.
+- **Preview:** an SVG in points from the same layout, each line stretched to its exact standard-font width with `textLength`, so Arimo/Tinos/Cousine's tiny differences never show. Characters that can't be written are drawn red, and the box gets a red dashed outline.
+- **Editing in place:** a textarea over the box in the same font, size and line height, with padding either side for the caret (so its text area is exactly the box). A backdrop behind it highlights unsupported characters with a red wavy underline, as planned. The box grows as you type.
+  - One edit (including restyling during it) is **one undo step**; a new box left empty disappears without leaving an undo step. Escape finishes and keeps the box selected; clicking elsewhere or dragging finishes too.
+  - **Adding:** with the Text tool open, clicking empty page space adds a box (its first line centred on the click) even while another is being edited, which finishes that one first. **Add text to page N** adds one in the middle of the page.
+- **Text panel:** font (each name shown in its preview font), bold, italic, size (4–200 pt, half points), three colour swatches plus a colour picker, alignment. It shows and changes the selected text box; with none selected, it sets the style for the next one. The style is remembered (`localStorage`, `pdf-flex:text-style`). Size typing and colour picking undo as one step each.
+- **Resizing** with a corner scales the font size; the opposite corner stays put. **Moving and nudging** text never resizes it (`keptOnPage` only moves).
+- **Placed list:** `“Jane Smith” · page 2`.
+- **Fonts:** Arimo, Tinos and Cousine 5.3.0 (OFL 1.1), Latin subset only, regular/bold/italic/bold italic: 12 files, about 200 KB, precached for offline use.
+- **Verified (no browser):** 47 web tests (18 new: encoding table, AFM values, layout, alignment, re-layout anchors, resize size, text stamp arguments, page clamping) and all Rust tests; `just lint` and `just build` pass. End to end without a browser: text laid out by the app's own code, stamped by the WASM build on a rotated page, measured by `pdftotext`: right-aligned lines end at exactly the same x, and baselines match the layout to within 0.001 pt.
+- **Known limits:** a text box larger than the page isn't shrunk. Tabs count as unsupported characters.
+- **Your checks** (`just dev`):
+  1. Open the Text tool. Click on a page and type a few lines: the box grows, the caret sits in the text, and when you click away the preview looks the same as while typing (no jump).
+  2. Change font, bold, italic, size, colour and alignment with a box selected, and with none (the next box uses the settings). Drag a corner: the text scales. Move it, nudge it, drag it to another page.
+  3. Undo/redo: a whole edit, a restyle, a resize. A new box left empty disappears and doesn't add an undo step.
+  4. Type `Łódź` or paste an emoji: the characters are highlighted, the panel warns, and Download refuses with a clear message.
+  5. Download and open in Chrome and Acrobat Reader, including text on a rotated page: the text sits where the preview showed, and can be selected, searched (Ctrl F) and copied.
 
 ### Chunk 5: Image text (other fonts)
 - The Text panel's font list gains a second group, **Image text**: the four bundled script fonts (Great Vibes, Dancing Script, Allura, Caveat).

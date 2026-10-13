@@ -22,6 +22,15 @@ html, body, #root { height: 100%; margin: 0; }
 }
 .toolbar .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30ch; }
 .toolbar .spacer { flex: 1; }
+.toolbar .separator { align-self: stretch; width: 1px; margin: 0.15rem 0.25rem; background: var(--border); }
+.edit-actions { display: inline-flex; align-items: center; gap: 0.25rem; }
+.icon-button { padding: 0.15rem 0.5rem; font-size: 1.1rem; line-height: 1.2; }
+button.download { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.8rem; margin-left: 0.25rem; }
+button.download svg { width: 1.1rem; height: 1.1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 640px) {
+  button.download .label { display: none; }
+  button.download { padding: 0.3rem 0.5rem; }
+}
 .page-nav input { width: 4.5em; margin: 0 0.3em; }
 .zoom { display: inline-flex; align-items: center; gap: 0.25rem; }
 .zoom-value { min-width: 3.5em; text-align: center; font-variant-numeric: tabular-nums; }
@@ -92,6 +101,30 @@ button.icon { border: none; background: none; padding: 0 0.3rem; font-size: 1.1r
 button.icon:hover { color: var(--danger); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Status bar, and the list of placed items that opens from it */
+.status-bar {
+  position: relative; display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.2rem 0.75rem; font-size: 0.85rem; color: var(--muted);
+  background: var(--panel); border-top: 1px solid var(--border);
+}
+.status-bar .spacer { flex: 1; }
+.status-items { border: none; background: none; padding: 0.1rem 0.4rem; color: var(--text); border-radius: 4px; }
+.status-items:hover, .status-items.open { background: rgb(0 0 0 / 0.06); }
+.status-unsaved { color: #9a5b00; }
+.status-unsaved::before { content: "● "; }
+.status-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.status-popover {
+  position: absolute; bottom: calc(100% + 4px); left: 0.5rem; z-index: 20;
+  width: min(20rem, calc(100vw - 1rem)); max-height: 50vh; overflow-y: auto;
+  padding: 0.6rem; background: white; color: var(--text); font-size: 0.9rem;
+  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+}
+.status-popover h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 0.4rem; }
+.status-popover .hint { color: var(--muted); margin: 0.2rem 0; }
+@media (max-width: 640px) {
+  .status-hint { display: none; }
+}
+
 .placements { list-style: none; margin: 0; padding: 0; }
 .placements li { display: flex; justify-content: space-between; align-items: center; padding: 0.15rem 0.3rem; border-radius: 4px; }
 .placements li.selected { background: rgb(37 99 235 / 0.1); }
@@ -117,6 +150,41 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   position: absolute; top: -1.6rem; right: -0.5rem; width: 1.3rem; height: 1.3rem; padding: 0;
   border-radius: 50%; line-height: 1; font-size: 0.95rem; color: var(--danger);
 }
+
+/* Text placements: the preview is an SVG in points; the editor is a textarea over the box. */
+.page-overlay.add-text { cursor: text; }
+.placement.text { cursor: move; }
+.placement.invalid { outline: 1.5px dashed #dc2626; }
+.text-preview { display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.text-preview text { white-space: pre; }
+.text-preview .bad { fill: #dc2626; }
+.text-editor { position: absolute; inset: 0; }
+.text-editor textarea, .text-backdrop {
+  position: absolute; top: 0; left: calc(-1 * var(--pad)); width: calc(100% + 2 * var(--pad)); height: 100%;
+  margin: 0; border: 0; padding: 0 var(--pad); box-sizing: border-box;
+  font: inherit; line-height: inherit; letter-spacing: 0; text-align: inherit; white-space: pre; overflow: hidden;
+}
+.text-editor textarea { background: transparent; color: inherit; caret-color: currentColor; resize: none; outline: none; }
+.text-backdrop { color: transparent; pointer-events: none; }
+.text-backdrop mark { color: transparent; background: rgb(220 38 38 / 0.15); text-decoration: underline wavy #dc2626; }
+
+/* Text panel */
+.text-panel h3 { font-size: 0.8rem; font-weight: 600; color: var(--muted); margin: 0.9rem 0 0.4rem; }
+.segmented { display: flex; }
+.segmented button { flex: 1; border-radius: 0; margin-left: -1px; padding: 0.3rem 0.4rem; }
+.segmented button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+.segmented button:last-child { border-radius: 0 4px 4px 0; }
+.segmented button.active { background: rgb(37 99 235 / 0.12); border-color: var(--accent); color: var(--accent); position: relative; }
+.segmented button.bold { font-weight: 700; }
+.segmented button.italic { font-style: italic; font-family: Georgia, serif; }
+.segmented svg { width: 1.1rem; height: 1.1rem; display: block; margin: auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.text-row { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.5rem; }
+.text-row .segmented { flex: none; }
+.text-row .size { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
+.text-row .size input { width: 4.2em; }
+.colors { display: flex; align-items: center; gap: 0.35rem; }
+.colors input[type="color"] { width: 1.6rem; height: 1.6rem; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: none; }
+.text-warning { color: var(--danger); background: var(--danger-bg); padding: 0.4rem 0.6rem; border-radius: 4px; font-size: 0.85rem; }
 
 /* Signature library. The checkerboard shows transparency. */
 .checkerboard { background: repeating-conic-gradient(#eee 0 25%, white 0 50%) 0 0 / 12px 12px; }

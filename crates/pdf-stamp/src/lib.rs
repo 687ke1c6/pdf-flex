@@ -1,4 +1,4 @@
-//! Stamp signature images onto PDF pages.
+//! Stamp images and text onto PDF pages.
 //!
 //! Placements are given in **display space**: PDF points (1/72 in) with the
 //! origin at the bottom-left of the page *as a viewer shows it*, i.e. after the
@@ -9,9 +9,10 @@ mod geometry;
 mod repair;
 #[doc(hidden)]
 pub mod testpdf;
+pub mod text;
 
 use std::collections::{BTreeMap, HashMap, hash_map::Entry};
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 
 use image::{ImageReader, Limits, RgbaImage};
 use lopdf::content::Content;
@@ -21,6 +22,7 @@ use lopdf::{
 };
 
 pub use geometry::{LETTER, Matrix, PageGeometry};
+pub use text::{Font, Line};
 
 /// No single compressed stream in the input may expand beyond this many bytes
 /// while loading. Real object streams are kilobytes; this stops a small file
@@ -45,7 +47,7 @@ pub struct Placement {
     pub height: f32,
 }
 
-/// What a placement draws, stretched to fill its box.
+/// What a placement draws.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "serde",
@@ -53,8 +55,19 @@ pub struct Placement {
     serde(tag = "kind", rename_all = "camelCase")
 )]
 pub enum Item {
-    /// One of the `images` passed to [`stamp`], by index.
+    /// One of the `images` passed to [`stamp`], by index, stretched to fill the box.
     Image { image: usize },
+    /// Real text (selectable and searchable) in a standard font. The caller
+    /// lays it out: each line's baseline start is given relative to the box's
+    /// bottom-left corner, and the box itself only positions it.
+    Text {
+        font: Font,
+        /// Font size in points.
+        size: f32,
+        /// Fill colour as 0–255 RGB.
+        color: [u8; 3],
+        lines: Vec<Line>,
+    },
 }
 
 /// Everything that can go wrong. The messages are written for end users: the
@@ -92,6 +105,11 @@ pub enum Error {
     ImageTooLarge { width: u32, height: u32 },
     #[error("Placed item {} has an invalid position or size.", index + 1)]
     BadPlacement { index: usize },
+    #[error(
+        "The character {character:?} can't be written in {font}. \
+         Use image text for other characters."
+    )]
+    UnsupportedCharacter { character: char, font: &'static str },
     #[error("placement uses image {index}, but only {count} images were given")]
     NoSuchImage { index: usize, count: usize },
     #[error("The edited PDF couldn't be written ({0}).")]
@@ -254,20 +272,15 @@ fn decode_image(bytes: &[u8]) -> Result<RgbaImage> {
     Ok(reader.decode().map_err(bad)?.into_rgba8())
 }
 
-/// Returns a copy of `pdf` with each placement's image (PNG or JPEG bytes from `images`) drawn on it.
+/// Returns a copy of `pdf` with each placement drawn on it. `images` are the
+/// PNG or JPEG files that image items refer to by index.
 pub fn stamp(pdf: &[u8], images: &[&[u8]], placements: &[Placement]) -> Result<Vec<u8>> {
     let mut doc = load(pdf)?;
 
     let pages = doc.get_pages();
     let mut by_page: BTreeMap<u32, Vec<&Placement>> = BTreeMap::new();
     for (index, p) in placements.iter().enumerate() {
-        let Item::Image { image } = p.item;
-        if image >= images.len() {
-            return Err(Error::NoSuchImage {
-                index: image,
-                count: images.len(),
-            });
-        }
+        check_item(&p.item, index, images.len())?;
         if !pages.contains_key(&p.page) {
             return Err(Error::NoSuchPage {
                 page: p.page,
@@ -285,13 +298,27 @@ pub fn stamp(pdf: &[u8], images: &[&[u8]], placements: &[Placement]) -> Result<V
     }
     drop_usage_rights(&mut doc);
 
-    // Each image used is embedded once and shared by all its placements.
+    // Each image and font used is added once and shared by all its placements.
     let mut image_ids: HashMap<usize, ObjectId> = HashMap::new();
+    let mut font_ids: HashMap<Font, ObjectId> = HashMap::new();
     for p in placements {
-        let Item::Image { image } = p.item;
-        if let Entry::Vacant(slot) = image_ids.entry(image) {
-            let decoded = decode_image(images[image])?;
-            slot.insert(add_image(&mut doc, &decoded));
+        match p.item {
+            Item::Image { image } => {
+                if let Entry::Vacant(slot) = image_ids.entry(image) {
+                    let decoded = decode_image(images[image])?;
+                    slot.insert(add_image(&mut doc, &decoded));
+                }
+            }
+            Item::Text { font, .. } => {
+                font_ids.entry(font).or_insert_with(|| {
+                    doc.add_object(dictionary! {
+                        "Type" => "Font",
+                        "Subtype" => "Type1",
+                        "BaseFont" => font.base_font(),
+                        "Encoding" => "WinAnsiEncoding",
+                    })
+                });
+            }
         }
     }
 
@@ -299,34 +326,126 @@ pub fn stamp(pdf: &[u8], images: &[&[u8]], placements: &[Placement]) -> Result<V
         let page_id = pages[&page];
         let to_user = PageGeometry::read(&doc, page_id).display_to_user();
 
-        // Resource name for each image used on this page.
-        let mut names: HashMap<usize, String> = HashMap::new();
+        // Resource names for the images and fonts used on this page.
+        let mut image_names: HashMap<usize, String> = HashMap::new();
+        let mut font_names: HashMap<Font, String> = HashMap::new();
         for p in &placements {
-            let Item::Image { image } = p.item;
-            if let Entry::Vacant(slot) = names.entry(image) {
-                let name = add_xobject_resource(&mut doc, page_id, page, image_ids[&image])?;
-                slot.insert(String::from_utf8_lossy(&name).into_owned());
+            match p.item {
+                Item::Image { image } => {
+                    if let Entry::Vacant(slot) = image_names.entry(image) {
+                        let name = add_resource(
+                            &mut doc,
+                            page_id,
+                            page,
+                            Resource::XObject,
+                            image_ids[&image],
+                        )?;
+                        slot.insert(name);
+                    }
+                }
+                Item::Text { font, .. } => {
+                    if let Entry::Vacant(slot) = font_names.entry(font) {
+                        let name =
+                            add_resource(&mut doc, page_id, page, Resource::Font, font_ids[&font])?;
+                        slot.insert(name);
+                    }
+                }
             }
         }
 
         // Each item is drawn in its own q … Q, from display space.
-        let mut ops = String::new();
+        let mut ops = Vec::new();
         for p in placements {
-            let draw = match p.item {
-                Item::Image { image } => format!(
+            write!(ops, "q {to_user} cm ").expect("writing to a Vec cannot fail");
+            match &p.item {
+                Item::Image { image } => write!(
+                    ops,
                     "{} 0 0 {} {} {} cm /{} Do",
-                    p.width, p.height, p.x, p.y, names[&image]
-                ),
-            };
-            ops += &format!("q {to_user} cm {draw} Q\n");
+                    p.width, p.height, p.x, p.y, image_names[image]
+                )
+                .expect("writing to a Vec cannot fail"),
+                Item::Text {
+                    font,
+                    size,
+                    color,
+                    lines,
+                } => {
+                    let name = &font_names[font];
+                    write_text(&mut ops, p, name, *font, *size, *color, lines)?;
+                }
+            }
+            ops.extend_from_slice(b" Q\n");
         }
-        wrap_contents(&mut doc, page_id, page, ops.as_bytes())?;
+        wrap_contents(&mut doc, page_id, page, &ops)?;
     }
 
     let mut out = Vec::new();
     doc.save_to(&mut out)
         .map_err(|e| Error::Write(e.to_string()))?;
     Ok(out)
+}
+
+/// Refuses an item that can't be drawn, before anything is written.
+fn check_item(item: &Item, index: usize, image_count: usize) -> Result<()> {
+    match item {
+        Item::Image { image } if *image >= image_count => Err(Error::NoSuchImage {
+            index: *image,
+            count: image_count,
+        }),
+        Item::Image { .. } => Ok(()),
+        Item::Text {
+            font, size, lines, ..
+        } => {
+            let positions = lines.iter().flat_map(|l| [l.x, l.y]);
+            if !size.is_finite() || *size <= 0.0 || !positions.into_iter().all(f32::is_finite) {
+                return Err(Error::BadPlacement { index });
+            }
+            for line in lines {
+                text::literal(&line.text).map_err(|character| Error::UnsupportedCharacter {
+                    character,
+                    font: font.family(),
+                })?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Writes a text item's operators: one text object, each line placed by its
+/// own text matrix, relative to the box's bottom-left corner.
+fn write_text(
+    ops: &mut Vec<u8>,
+    p: &Placement,
+    font_name: &str,
+    font: Font,
+    size: f32,
+    [r, g, b]: [u8; 3],
+    lines: &[Line],
+) -> Result<()> {
+    let channel = |c: u8| f32::from(c) / 255.0;
+    let w = "writing to a Vec cannot fail";
+    write!(
+        ops,
+        "1 0 0 1 {} {} cm BT /{font_name} {size} Tf {} {} {} rg",
+        p.x,
+        p.y,
+        channel(r),
+        channel(g),
+        channel(b)
+    )
+    .expect(w);
+    for line in lines.iter().filter(|l| !l.text.is_empty()) {
+        let literal =
+            text::literal(&line.text).map_err(|character| Error::UnsupportedCharacter {
+                character,
+                font: font.family(),
+            })?;
+        write!(ops, " 1 0 0 1 {} {} Tm ", line.x, line.y).expect(w);
+        ops.extend_from_slice(&literal);
+        ops.extend_from_slice(b" Tj");
+    }
+    ops.extend_from_slice(b" ET");
+    Ok(())
 }
 
 /// Flate-compresses a new stream. Compressing in memory cannot fail in practice.
@@ -366,22 +485,48 @@ fn add_image(doc: &mut Document, image: &RgbaImage) -> ObjectId {
     doc.add_object(compressed(dict, rgb))
 }
 
-/// Registers the image in the page's `/XObject` resources and returns the name it was given.
+/// A kind of page resource that stamping adds.
+#[derive(Clone, Copy)]
+enum Resource {
+    XObject,
+    Font,
+}
+
+impl Resource {
+    fn key(self) -> &'static str {
+        match self {
+            Resource::XObject => "XObject",
+            Resource::Font => "Font",
+        }
+    }
+
+    /// Names given to added resources: `PdfFlex0`, … for images, `PdfFlexF0`, … for fonts.
+    fn prefix(self) -> &'static str {
+        match self {
+            Resource::XObject => "PdfFlex",
+            Resource::Font => "PdfFlexF",
+        }
+    }
+}
+
+/// Registers `id` in the page's resources of the given kind and returns the
+/// name it was given.
 ///
 /// Resources may be inherited or shared with other pages, so the page gets its
 /// own copy of the effective dictionary rather than editing a shared one.
-fn add_xobject_resource(
+fn add_resource(
     doc: &mut Document,
     page_id: ObjectId,
     page: u32,
-    image_id: ObjectId,
-) -> Result<Vec<u8>> {
+    kind: Resource,
+    id: ObjectId,
+) -> Result<String> {
     let mut resources = geometry::inherited(doc, page_id, b"Resources")
         .and_then(|o| o.as_dict().ok())
         .cloned()
         .unwrap_or_default();
-    let mut xobjects = resources
-        .get(b"XObject")
+    let mut entries = resources
+        .get(kind.key().as_bytes())
         .ok()
         .and_then(|o| doc.dereference(o).ok())
         .and_then(|(_, o)| o.as_dict().ok())
@@ -389,11 +534,11 @@ fn add_xobject_resource(
         .unwrap_or_default();
 
     let name = (0..)
-        .map(|i| format!("PdfFlex{i}").into_bytes())
-        .find(|n| !xobjects.has(n))
+        .map(|i| format!("{}{i}", kind.prefix()))
+        .find(|n| !entries.has(n.as_bytes()))
         .expect("an unused name exists");
-    xobjects.set(name.clone(), image_id);
-    resources.set("XObject", xobjects);
+    entries.set(name.as_bytes(), id);
+    resources.set(kind.key(), entries);
     page_dict(doc, page_id, page)?.set("Resources", resources);
     Ok(name)
 }

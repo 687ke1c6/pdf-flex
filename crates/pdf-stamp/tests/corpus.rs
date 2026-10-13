@@ -1,13 +1,15 @@
 //! Stamps every file in `tests/corpus/` and checks the result.
 //!
-//! For each file that should sign, every page gets an opaque black box, and:
+//! For each file that should sign, every page gets an opaque black box with a
+//! line of black text on it, and:
 //! - the output reloads with the same page count and catalog entries (forms,
 //!   tags, metadata, outlines are not dropped);
 //! - `qpdf --check` passes with no warnings;
 //! - rendered with poppler, the box is black exactly where it was placed and
-//!   every pixel outside it matches the original.
+//!   every pixel outside it matches the original;
+//! - poppler's `pdftotext` finds each page's text on that page.
 //!
-//! qpdf and poppler's `pdftoppm` are external tools; if one is missing, its
+//! qpdf, `pdftoppm` and `pdftotext` are external tools; if one is missing, its
 //! checks are skipped with a message rather than failing. Outputs are written to
 //! `target/tmp/corpus/` for checking by eye.
 
@@ -19,7 +21,7 @@ use std::{
 };
 
 use lopdf::Document;
-use pdf_stamp::{Error, Item, PageGeometry, Placement, inspect, load, stamp};
+use pdf_stamp::{Error, Font, Item, Line, PageGeometry, Placement, inspect, load, stamp};
 
 enum Expect {
     /// Stamping succeeds and the output passes every check.
@@ -122,6 +124,31 @@ fn placements(doc: &Document) -> Vec<Placement> {
         .collect()
 }
 
+/// The text written on each page, so it can be found again.
+fn marker(page: u32) -> String {
+    format!("pdfflex-{page}")
+}
+
+/// A line of black text inside each box (black on black, so renders don't change).
+fn text_on(boxes: &[Placement]) -> Vec<Placement> {
+    boxes
+        .iter()
+        .map(|b| Placement {
+            item: Item::Text {
+                font: Font::Helvetica,
+                size: 8.0,
+                color: [0, 0, 0],
+                lines: vec![Line {
+                    text: marker(b.page),
+                    x: 4.0,
+                    y: 21.0,
+                }],
+            },
+            ..b.clone()
+        })
+        .collect()
+}
+
 #[test]
 fn every_corpus_file_has_an_expectation() {
     let mut missing = Vec::new();
@@ -143,11 +170,17 @@ fn every_corpus_file_meets_its_expectation() {
     fs::create_dir_all(&out_dir).unwrap();
     let qpdf = tool_available("qpdf", "--version");
     let poppler = tool_available("pdftoppm", "-v");
+    let pdftotext = tool_available("pdftotext", "-v");
 
     let mut failures = Vec::new();
     for (name, expect) in CASES {
         let pdf = fs::read(corpus().join(name)).unwrap();
-        let result = check(name, &pdf, &sig, expect, &out_dir, qpdf, poppler);
+        let tools = Tools {
+            qpdf,
+            poppler,
+            pdftotext,
+        };
+        let result = check(name, &pdf, &sig, expect, &out_dir, &tools);
         match result {
             Ok(()) => println!("ok    {name}"),
             Err(why) => {
@@ -164,14 +197,20 @@ fn every_corpus_file_meets_its_expectation() {
     );
 }
 
+/// Which external tools are installed.
+struct Tools {
+    qpdf: bool,
+    poppler: bool,
+    pdftotext: bool,
+}
+
 fn check(
     name: &str,
     pdf: &[u8],
     sig: &[u8],
     expect: &Expect,
     out_dir: &Path,
-    qpdf: bool,
-    poppler: bool,
+    tools: &Tools,
 ) -> Result<(), String> {
     match expect {
         Fails(is_expected) => {
@@ -196,7 +235,8 @@ fn check(
                     placements.len()
                 ));
             }
-            let out = stamp(pdf, &[sig], &placements).map_err(|e| format!("stamp: {e}"))?;
+            let all = [placements.clone(), text_on(&placements)].concat();
+            let out = stamp(pdf, &[sig], &all).map_err(|e| format!("stamp: {e}"))?;
             let out_path = out_dir.join(name.replace('/', "--"));
             fs::write(&out_path, &out).unwrap();
 
@@ -230,13 +270,16 @@ fn check(
                 return Err(format!("catalog lost {lost:?}"));
             }
 
-            if qpdf {
+            if tools.qpdf {
                 qpdf_check(&out_path)?;
             }
-            if poppler {
+            if tools.poppler {
                 for p in &placements {
                     compare_renders(pdf, &out, p, &before, matches!(expect, SignsAndRenders))?;
                 }
+            }
+            if tools.pdftotext {
+                find_text(&out, &placements)?;
             }
             Ok(())
         }
@@ -260,6 +303,32 @@ fn qpdf_check(path: &Path) -> Result<(), String> {
     let text = String::from_utf8_lossy(&out.stdout) + String::from_utf8_lossy(&out.stderr);
     if !out.status.success() || text.contains("WARNING") {
         return Err(format!("qpdf --check: {}", text.trim()));
+    }
+    Ok(())
+}
+
+/// Each page's marker text must be extracted from that page.
+fn find_text(pdf: &[u8], placements: &[Placement]) -> Result<(), String> {
+    let mut child = Command::new("pdftotext")
+        .args(["-", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let input = pdf.to_vec();
+    let writer = std::thread::spawn(move || stdin.write_all(&input));
+    let out = child.wait_with_output().unwrap();
+    let _ = writer.join();
+    // pdftotext ends each page with a form feed.
+    let text = String::from_utf8_lossy(&out.stdout);
+    let pages: Vec<&str> = text.split('\x0c').collect();
+    for p in placements {
+        let page_text = pages.get(p.page as usize - 1).copied().unwrap_or_default();
+        if !page_text.contains(&marker(p.page)) {
+            return Err(format!("pdftotext didn't find the text on page {}", p.page));
+        }
     }
     Ok(())
 }

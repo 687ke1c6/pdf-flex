@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { centeredAt, clampToPage, moved, resized, resizedFree, toCss, toPoints, toStampArgs, MIN_SIDE, MIN_WIDTH } from "./placement";
+import { centeredAt, clampToPage, keptOnPage, moved, resized, resizedFree, toCss, toPoints, toStampArgs, MIN_SIDE, MIN_WIDTH } from "./placement";
 
 const LETTER = { width: 612, height: 792 };
 const box = { x: 100, y: 200, width: 150, height: 50 };
@@ -106,4 +106,24 @@ test("toStampArgs lists each signature once and refers to it by index", () => {
     { page: 3, x: 1, y: 2, width: 3, height: 4, item: { kind: "image", image: 1 } },
     { page: 2, x: 5, y: 6, width: 7, height: 8, item: { kind: "image", image: 0 } },
   ]);
+});
+
+test("toStampArgs writes text items from the layout, skipping empty lines", () => {
+  const style = { family: "Times", bold: true, italic: false, size: 10, color: "#1e3a8a", align: "left" } as const;
+  const { signatureIds, placements } = toStampArgs([
+    { id: "t", kind: "text", text: "Hi\n\nthere", style, page: 2, ...box },
+  ]);
+  expect(signatureIds).toEqual([]);
+  const item = placements[0].item;
+  if (item.kind !== "text") throw new Error("not text");
+  expect(item.font).toBe("Times-Bold");
+  expect(item.color).toEqual([30, 58, 138]);
+  expect(item.lines.map((l) => l.text)).toEqual(["Hi", "there"]);
+  expect(item.lines[0].y - item.lines[1].y).toBeCloseTo(24);
+});
+
+test("keptOnPage moves without resizing", () => {
+  expect(keptOnPage({ x: -10, y: 790, width: 100, height: 20 }, LETTER)).toEqual({ x: 0, y: 772, width: 100, height: 20 });
+  // Larger than the page: the top-left corner stays on it.
+  expect(keptOnPage({ x: 50, y: 0, width: 700, height: 900 }, LETTER)).toEqual({ x: 0, y: -108, width: 700, height: 900 });
 });

@@ -1,7 +1,7 @@
 // The strip of tool buttons on the far left. Each tool has its own panel next to it.
 import { For, type JSX } from "solid-js";
 
-export type Tool = "signatures";
+export type Tool = "signatures" | "text";
 
 interface ToolInfo {
   id: Tool;
@@ -18,6 +18,7 @@ const icon = (path: string) => () => (
 
 export const TOOLS: ToolInfo[] = [
   { id: "signatures", label: "Signatures", icon: icon("M3 17c3-1 4-8 6-8s0 7 2 7 3-4 4-4 1 3 3 3 2-1 3-1M3 21h18") },
+  { id: "text", label: "Text", icon: icon("M5 6V4h14v2M12 4v16M9 20h6") },
 ];
 
 const STORAGE_KEY = "pdf-flex:tool";

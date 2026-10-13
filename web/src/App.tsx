@@ -3,6 +3,7 @@ import { download, editedName } from "./download";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
 import { openPdf, type LoadedPdf } from "./pdf";
 import { Sidebar } from "./Sidebar";
+import { StatusBar } from "./StatusBar";
 import { inspectPdf, sameLayout, stampPdf } from "./stamper";
 import { clampZoom, stepZoom } from "./zoom";
 import { AboutDialog, UpdatePrompt } from "./pwa";
@@ -110,6 +111,7 @@ export function App() {
 
   async function save() {
     const f = file();
+    editor.endEdit();
     if (!f || !editor.placements.length) return;
     setError("");
     setSaving(true);
@@ -162,8 +164,13 @@ export function App() {
       return;
     }
 
-    // Delete / Escape act on the selected placement.
+    // Delete / Escape act on the selected placement; Enter edits selected text.
     const selected = editor.selected();
+    if (selected && !typing && !mod && e.key === "Enter" && editor.selectedText()) {
+      e.preventDefault();
+      editor.beginEdit(selected);
+      return;
+    }
     if (selected && !typing && (e.key === "Delete" || e.key === "Backspace")) {
       e.preventDefault();
       editor.remove(selected);
@@ -256,6 +263,26 @@ export function App() {
                 {f().name}
               </span>
               <span class="spacer" />
+              <span class="edit-actions">
+                <button class="icon-button" title="Undo (Ctrl Z)" aria-label="Undo" disabled={!editor.canUndo()} onClick={() => editor.undo()}>
+                  ↶
+                </button>
+                <button class="icon-button" title="Redo (Ctrl Shift Z)" aria-label="Redo" disabled={!editor.canRedo()} onClick={() => editor.redo()}>
+                  ↷
+                </button>
+                <button
+                  class="primary download"
+                  title="Download a copy with your changes. The original file is not changed."
+                  disabled={!editor.placements.length || saving()}
+                  onClick={save}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 4v11m-5-5 5 5 5-5M5 20h14" />
+                  </svg>
+                  <span class="label">{saving() ? "Saving…" : "Download PDF"}</span>
+                </button>
+              </span>
+              <span class="separator" aria-hidden="true" />
               <label class="page-nav">
                 Page
                 <input
@@ -305,13 +332,7 @@ export function App() {
 
       <div class="body">
         <Show when={file()}>
-          <Sidebar
-            currentPage={page()}
-            saving={saving()}
-            onSave={save}
-            onGoToPage={(n) => viewer?.goToPage(n)}
-            onError={setError}
-          />
+          <Sidebar currentPage={page()} onError={setError} />
         </Show>
         <main class="main">
           <Show
@@ -340,6 +361,9 @@ export function App() {
           </Show>
         </main>
       </div>
+      <Show when={file()}>
+        <StatusBar onGoToPage={(n) => viewer?.goToPage(n)} />
+      </Show>
     </div>
   );
 }

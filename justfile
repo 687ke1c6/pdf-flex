@@ -30,6 +30,11 @@ corpus:
 stamp *args:
     cargo run -q -p pdf-stamp --example stamp -- {{args}}
 
+# Stamp text onto a PDF, e.g. just stamp-text in.pdf "Jane Smith\n13 Oct 2026" out.pdf --page 1 --at 400,80 --size 12 --font Times-Roman
+[positional-arguments]
+stamp-text *args:
+    cargo run -q -p pdf-stamp --example stamp_text -- "$@"
+
 # Build the WASM package into crates/pdf-stamp-wasm/pkg (used by web/ and the demo)
 wasm:
     wasm-pack build crates/pdf-stamp-wasm --target web --release --no-pack
@@ -40,6 +45,7 @@ wasm:
 wasm-smoke: fixtures wasm
     bun crates/pdf-stamp-wasm/smoke.ts
     qpdf --check out/wasm-smoke.pdf > /dev/null && echo "qpdf ok: out/wasm-smoke.pdf"
+    pdftotext out/wasm-smoke.pdf - | grep -q 'Café – 5 €' && echo "pdftotext ok: out/wasm-smoke.pdf"
     cd web && bun install --frozen-lockfile
     bun crates/pdf-stamp-wasm/corpus.ts 2> /dev/null
 

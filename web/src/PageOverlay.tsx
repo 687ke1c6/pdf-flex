@@ -1,8 +1,10 @@
-// The interactive layer over a rendered page: placed signatures you can move, resize and delete.
+// The interactive layer over a rendered page: placed items you can move, resize, edit and delete.
 import { For, Match, Show, Switch } from "solid-js";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
 import type { PageSize } from "./pdf";
 import { keepsAspect, resized, resizedFree, toCss, toPoints, type Corner, type Placement, type Point } from "./placement";
+import { TextEditor, TextPreview } from "./TextBox";
+import { unsupportedChars } from "./winansi";
 
 interface Props {
   pageNumber: number;
@@ -37,6 +39,18 @@ export function PageOverlay(props: Props) {
     e.dataTransfer.dropEffect = "copy";
   }
 
+  /** Clicking empty page space adds text with the Text tool, and otherwise clears the selection. */
+  function onEmptySpace(e: PointerEvent) {
+    if (e.target !== e.currentTarget) return;
+    if (editor.tool() === "text" && e.button === 0) {
+      // Keeps focus from moving to the page, so the new box's textarea keeps it.
+      e.preventDefault();
+      editor.addText(props.pageNumber, pointerOnPage(e, e.currentTarget as Element));
+      return;
+    }
+    editor.select(null);
+  }
+
   function onDrop(e: DragEvent) {
     if (!e.dataTransfer?.types.includes(SIGNATURE_DRAG_TYPE)) return;
     e.preventDefault();
@@ -48,11 +62,11 @@ export function PageOverlay(props: Props) {
   return (
     <div
       class="page-overlay"
+      classList={{ "add-text": editor.tool() === "text" }}
       data-page={props.pageNumber}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      // Clicking empty page space clears the selection.
-      onPointerDown={(e) => e.target === e.currentTarget && editor.select(null)}
+      onPointerDown={onEmptySpace}
     >
       <For each={onThisPage()}>
         {(placement) => <PlacementBox placement={placement} size={props.size} scale={props.scale} pointerOnPage={pointerOnPage} />}
@@ -83,6 +97,8 @@ function PlacementBox(props: BoxProps) {
     e.preventDefault();
     e.stopPropagation();
     const id = props.placement.id;
+    // A drag ends any text edit, so the two undo separately.
+    editor.endEdit();
     editor.select(id);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const end = (u: PointerEvent) => {
@@ -127,6 +143,10 @@ function PlacementBox(props: BoxProps) {
     const layer = (e.currentTarget as HTMLElement).closest(".page-overlay")!;
     const start = { ...props.placement };
     const id = start.id;
+    if (start.kind === "text") {
+      track(e, (m) => editor.resizeText(id, start, corner, props.pointerOnPage(m, layer)));
+      return;
+    }
     track(e, (m) => {
       // Free kinds keep their proportions while Shift is held.
       const resize = keepsAspect(start.kind) || m.shiftKey ? resized : resizedFree;
@@ -137,7 +157,11 @@ function PlacementBox(props: BoxProps) {
   return (
     <div
       class="placement"
-      classList={{ selected: isSelected() }}
+      classList={{
+        selected: isSelected(),
+        text: props.placement.kind === "text",
+        invalid: props.placement.kind === "text" && unsupportedChars(props.placement.text).length > 0,
+      }}
       style={{
         left: `${css().left}px`,
         top: `${css().top}px`,
@@ -145,10 +169,18 @@ function PlacementBox(props: BoxProps) {
         height: `${css().height}px`,
       }}
       onPointerDown={startMove}
+      onDblClick={() => props.placement.kind === "text" && editor.beginEdit(props.placement.id)}
     >
       <Switch>
         <Match when={props.placement.kind === "image" && editor.signature(props.placement.signatureId)}>
           {(sig) => <img src={sig().url} alt={sig().name} draggable={false} />}
+        </Match>
+        <Match when={props.placement.kind === "text" && props.placement}>
+          {(text) => (
+            <Show when={editor.editing() === text().id} fallback={<TextPreview placement={text()} />}>
+              <TextEditor placement={text()} scale={props.scale} />
+            </Show>
+          )}
         </Match>
       </Switch>
       <Show when={isSelected()}>
