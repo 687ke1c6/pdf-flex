@@ -38,7 +38,7 @@ This phase turns it into a small general PDF editor: **text** first, then **shap
 | 5 | On-screen preview fonts | **Arimo, Tinos and Cousine** (bundled, OFL), which are metrically compatible with Helvetica, Times and Courier. Each line is positioned by the layout from decision 4, so glyph differences never change line breaks or alignment |
 | 6 | Symbols | **Vector paths**, not the ZapfDingbats font: they look the same in the preview (SVG) and the PDF, and need no character mapping |
 | 7 | JS ↔ Rust interface | Placements go to WASM as **structured data** (`serde` + `serde-wasm-bindgen`) instead of flat number arrays, which can't carry text. Measure the WASM size; budget ≤ 1.2 MB raw |
-| 8 | Output filename | `<name>-edited.pdf` (was `-signed.pdf`) |
+| 8 | Output filename | Asked for in a dialog on Download, suggesting `<name>_edited.pdf` with `_edited` selected for retyping (was a fixed `<name>-edited.pdf`, and before that `-signed.pdf`) |
 | 9 | Hosting | Railway now (cache mounts removed from the Dockerfile for it). The Raspberry Pi deploy (MVP chunk 10) stays a "later" item |
 
 ---

@@ -3,6 +3,8 @@ import { createResource, For, Show } from "solid-js";
 import { draftStore, formatSavedAt, formatSize, type DraftSummary } from "./draftStore";
 
 interface Props {
+  /** Documents already open in a tab: shown as such, and clicking one switches to it. */
+  openIds: string[];
   onOpen(draft: DraftSummary): void;
   onError(message: string): void;
 }
@@ -30,13 +32,24 @@ export function RecentDrafts(props: Props) {
             {(draft) => (
               <li>
                 <button class="recent-open" onClick={() => props.onOpen(draft)}>
-                  <span class="recent-name">{draft.name}</span>
+                  <span class="recent-name">
+                    {draft.name}
+                    <Show when={props.openIds.includes(draft.id)}>
+                      <span class="recent-badge">open in a tab</span>
+                    </Show>
+                  </span>
                   <span class="recent-meta">
                     {draft.items} {draft.items === 1 ? "item" : "items"} · {draft.pageCount} {draft.pageCount === 1 ? "page" : "pages"} ·{" "}
                     {formatSize(draft.size)} · saved {formatSavedAt(draft.savedAt)}
                   </span>
                 </button>
-                <button class="icon" title="Discard this draft" aria-label={`Discard draft of ${draft.name}`} onClick={() => discard(draft)}>
+                <button
+                  class="icon"
+                  title={props.openIds.includes(draft.id) ? "Close its tab first" : "Discard this draft"}
+                  aria-label={`Discard draft of ${draft.name}`}
+                  disabled={props.openIds.includes(draft.id)}
+                  onClick={() => discard(draft)}
+                >
                   ×
                 </button>
               </li>
