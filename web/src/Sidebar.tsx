@@ -1,6 +1,7 @@
 // The left side: the tool rail and the active tool's panel.
 import { createSignal, Match, Show, Switch } from "solid-js";
 import { useEditor } from "./editor";
+import { ShapesPanel } from "./ShapesPanel";
 import { SignaturesPanel } from "./SignaturesPanel";
 import { TextPanel } from "./TextPanel";
 import { ToolRail, type Tool } from "./ToolRail";
@@ -38,6 +39,9 @@ export function Sidebar(props: Props) {
               </Match>
               <Match when={editor.tool() === "text"}>
                 <TextPanel currentPage={props.currentPage} />
+              </Match>
+              <Match when={editor.tool() === "shapes"}>
+                <ShapesPanel />
               </Match>
             </Switch>
           </section>

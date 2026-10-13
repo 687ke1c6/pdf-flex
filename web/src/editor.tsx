@@ -6,14 +6,17 @@ import { createHistory } from "./history";
 import {
   centeredAt,
   clampToPage,
+  fixedSize,
   keptOnPage,
   moved,
   type Box,
   type Corner,
   type Placement,
   type Point,
+  type ShapePlacement,
   type TextPlacement,
 } from "./placement";
+import { DEFAULT_SHAPE_STYLE, lineBox, lineEnds, SHAPE_KINDS, type ShapeKind, type ShapeStyle } from "./shapes";
 import { savedTool, saveTool, type Tool } from "./ToolRail";
 import { LINE_HEIGHT, opposite, relaidOut, resizedTextSize, type TextStyle } from "./textLayout";
 import {
@@ -50,26 +53,29 @@ export const SIGNATURE_DRAG_TYPE = "application/x-pdf-flex-signature";
 
 const withUrl = (sig: StoredSignature): Signature => ({ ...sig, url: URL.createObjectURL(sig.png) });
 
-const TEXT_STYLE_KEY = "pdf-flex:text-style";
-const DEFAULT_TEXT_STYLE: TextStyle = { family: "Helvetica", bold: false, italic: false, size: 12, color: "#000000", align: "left" };
-
-/** The text style used last time. Storage may be unavailable (private mode, blocked). */
-function savedTextStyle(): TextStyle {
+/** Reads a remembered setting. Storage may be unavailable (private mode, blocked). */
+function load<T>(key: string, fallback: T): T {
   try {
-    const saved = JSON.parse(localStorage.getItem(TEXT_STYLE_KEY) ?? "null");
-    return { ...DEFAULT_TEXT_STYLE, ...saved };
+    const saved = JSON.parse(localStorage.getItem(key) ?? "null");
+    if (saved === null) return fallback;
+    return typeof fallback === "object" ? { ...fallback, ...saved } : saved;
   } catch {
-    return DEFAULT_TEXT_STYLE;
+    return fallback;
   }
 }
 
-function saveTextStyle(style: TextStyle) {
+function store(key: string, value: unknown) {
   try {
-    localStorage.setItem(TEXT_STYLE_KEY, JSON.stringify(style));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // Not remembered; nothing else depends on it.
   }
 }
+
+const SHAPE_STYLE_KEY = "pdf-flex:shape-style";
+const SHAPE_TOOL_KEY = "pdf-flex:shape-tool";
+const TEXT_STYLE_KEY = "pdf-flex:text-style";
+const DEFAULT_TEXT_STYLE: TextStyle = { family: "Helvetica", bold: false, italic: false, size: 12, color: "#000000", align: "left" };
 
 /** An in-place text edit in progress. It becomes one undo step when it ends. */
 interface EditSession {
@@ -85,8 +91,13 @@ function createEditor() {
   const [placements, setPlacements] = createStore<Placement[]>([]);
   const [selected, setSelected] = createSignal<string | null>(null);
   const [tool, setToolSignal] = createSignal<Tool>(savedTool());
-  const [textStyle, setTextStyleSignal] = createSignal<TextStyle>(savedTextStyle());
+  const [textStyle, setTextStyleSignal] = createSignal<TextStyle>(load(TEXT_STYLE_KEY, DEFAULT_TEXT_STYLE));
   const [editing, setEditing] = createSignal<string | null>(null);
+  const [shapeStyle, setShapeStyleSignal] = createSignal<ShapeStyle>(load(SHAPE_STYLE_KEY, DEFAULT_SHAPE_STYLE));
+  const savedShape = load<string>(SHAPE_TOOL_KEY, "rect");
+  const [shapeTool, setShapeToolSignal] = createSignal<ShapeKind>(
+    SHAPE_KINDS.find((k) => k === savedShape) ?? "rect",
+  );
   let session: EditSession | undefined;
   let pages: PageSize[] = [];
   let nextPlacementId = 0;
@@ -118,6 +129,16 @@ function createEditor() {
     return stored;
   };
   const save = (sig: Signature) => signatureStore.put(toStored(sig));
+
+  const shapePlacement = (id: string | null | undefined) =>
+    placements.find((p): p is ShapePlacement => p.id === id && p.kind === "shape");
+
+  /** Sets a shape's box (and a line's ends), kept on its page. */
+  function setGeometry(p: ShapePlacement, box: Box, ends?: [Point, Point]) {
+    const size = pages[p.page - 1];
+    const placed = size ? (ends ? keptOnPage(box, size) : clampToPage(box, size)) : box;
+    setPlacements((q) => q.id === p.id, { ...placed, ...(ends ? { ends } : {}) });
+  }
 
   const textPlacement = (id: string | null | undefined) =>
     placements.find((p): p is TextPlacement => p.id === id && p.kind === "text");
@@ -175,6 +196,76 @@ function createEditor() {
     setTool(next: Tool) {
       setToolSignal(next);
       saveTool(next);
+    },
+
+    /** The selected placement, if it's a shape. */
+    selectedShape: () => shapePlacement(selected()),
+    /** The style the next shape gets. */
+    shapeStyle,
+    /** What the Shapes tool draws next. */
+    shapeTool,
+    setShapeTool(next: ShapeKind) {
+      setShapeToolSignal(next);
+      store(SHAPE_TOOL_KEY, next);
+    },
+
+    /**
+     * Adds a shape of the current shape tool. Its drawing (see `drawShape`)
+     * continues the same undo step, until `endChange`.
+     */
+    addShape(page: number, geometry: { box: Box; ends?: [Point, Point] }): string | undefined {
+      const size = pages[page - 1];
+      if (!size) return;
+      endEdit();
+      const id = `p${nextPlacementId++}`;
+      checkpoint(`draw:${id}`);
+      const p: ShapePlacement = { id, kind: "shape", shape: shapeTool(), style: shapeStyle(), page, ...geometry.box };
+      if (geometry.ends) p.ends = geometry.ends;
+      setPlacements(placements.length, p);
+      setGeometry(p, geometry.box, geometry.ends);
+      setSelected(id);
+      return id;
+    },
+
+    /** Reshapes a shape being drawn. */
+    drawShape(id: string, geometry: { box: Box; ends?: [Point, Point] }) {
+      const p = shapePlacement(id);
+      if (!p) return;
+      checkpoint(`draw:${id}`);
+      setGeometry(p, geometry.box, geometry.ends);
+    },
+
+    /** Moves one end of a line to a page point. One drag is one undo step. */
+    moveLineEnd(id: string, end: 0 | 1, to: Point) {
+      const p = shapePlacement(id);
+      if (!p?.ends) return;
+      const ends = lineEnds(p, p.ends);
+      ends[end] = to;
+      checkpoint(`end:${id}`);
+      const line = lineBox(ends[0], ends[1], p.style.strokeWidth);
+      setGeometry(p, line.box, line.ends);
+    },
+
+    /**
+     * Changes the style of the selected shape, if any, and of the next one.
+     * Changes with the same `tag` (e.g. typing a width) undo as one step.
+     */
+    setShapeStyle(change: Partial<ShapeStyle>, tag?: string) {
+      const next = { ...shapeStyle(), ...change };
+      setShapeStyleSignal(next);
+      store(SHAPE_STYLE_KEY, next);
+      const p = shapePlacement(selected());
+      if (!p) return;
+      const style = { ...p.style, ...change };
+      if (JSON.stringify(style) === JSON.stringify(p.style)) return;
+      checkpoint(tag && `style:${p.id}:${tag}`);
+      setPlacements((q) => q.id === p.id, { style });
+      // A line's box leaves room for its width.
+      if (p.ends) {
+        const [a, b] = lineEnds(p, p.ends);
+        const line = lineBox(a, b, style.strokeWidth);
+        setGeometry(p, line.box, line.ends);
+      }
     },
 
     /** The selected placement, if it's text. */
@@ -287,7 +378,7 @@ function createEditor() {
       const target = page ?? current.page;
       const size = pages[target - 1];
       if (!size) return;
-      const next = { ...(current.kind === "text" ? keptOnPage(box, size) : clampToPage(box, size)), page: target };
+      const next = { ...(fixedSize(current) ? keptOnPage(box, size) : clampToPage(box, size)), page: target };
       const same = (Object.keys(next) as (keyof typeof next)[]).every((k) => next[k] === current[k]);
       if (same) return;
       checkpoint(tag);
@@ -301,7 +392,7 @@ function createEditor() {
       if (!current || !size) return;
       checkpoint(`nudge:${current.id}`);
       const box = { x: current.x + dx, y: current.y + dy, width: current.width, height: current.height };
-      setPlacements((p) => p.id === current.id, current.kind === "text" ? keptOnPage(box, size) : moved(current, dx, dy, size));
+      setPlacements((p) => p.id === current.id, fixedSize(current) ? keptOnPage(box, size) : moved(current, dx, dy, size));
     },
 
     /**
@@ -347,7 +438,7 @@ function createEditor() {
     setTextStyle(change: Partial<TextStyle>, tag?: string) {
       const next = { ...textStyle(), ...change };
       setTextStyleSignal(next);
-      saveTextStyle(next);
+      store(TEXT_STYLE_KEY, next);
       const p = textPlacement(selected());
       if (!p) return;
       const style = { ...p.style, ...change };
@@ -356,7 +447,7 @@ function createEditor() {
       if (!session) checkpoint(tag && `style:${p.id}:${tag}`);
       setText(p, p.text, style);
       setTextStyleSignal({ ...style });
-      saveTextStyle(style);
+      store(TEXT_STYLE_KEY, style);
     },
 
     /** Resizes a text box by dragging `corner`: its font size follows. One drag is one undo step. */

@@ -16,6 +16,20 @@ const text = { kind: "text", font: "Helvetica-Bold", size: 12, color: [30, 58, 1
 const out = stamp(pdf, sig, lengths, [
   { page: 1, x: 602, y: 40, width: 150, height: 50, item: image },
   { page: 1, x: 602, y: 100, width: 150, height: 20, item: text },
+  {
+    page: 1,
+    x: 602,
+    y: 130,
+    width: 40,
+    height: 20,
+    item: {
+      kind: "shape",
+      path: [{ op: "M", x: 0, y: 0 }, { op: "L", x: 40, y: 0 }, { op: "L", x: 40, y: 20 }, { op: "Z" }],
+      stroke: { color: [185, 28, 28], width: 2 },
+      fill: [255, 255, 255],
+      rounded: false,
+    },
+  },
 ]);
 console.log(`stamped in ${(performance.now() - started).toFixed(1)} ms -> ${out.length} bytes`);
 writeFileSync("out/wasm-smoke.pdf", out);

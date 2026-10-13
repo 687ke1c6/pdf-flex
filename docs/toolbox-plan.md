@@ -16,7 +16,6 @@ This phase turns it into a small general PDF editor: **text** first, then **shap
   - Typed on the page, in place.
 - **Text in other fonts** (the bundled script fonts, more later) written as an image: looks the same, but isn't selectable.
 - **Shapes and symbols** as vector graphics: rectangle, ellipse, line; ✓ ✗ ● ○ symbols for ticking forms. Stroke colour and width, optional fill.
-- A **cover-up box** (a filled rectangle), clearly labelled as *not* redaction (§5.3).
 - Everything already built keeps working: move, resize, cross-page drag, undo, nudge, unsaved-changes warning.
 
 **Out of scope for this phase** (see §7)
@@ -53,12 +52,12 @@ Each chunk ends with something you can run and check, then a review and a commit
 | # | Chunk | Done when | Status |
 |---|---|---|---|
 | 1 | Tool rail and panels | Signing works exactly as before, from the new layout | ✅ |
-| 1b | Top bar actions and status bar | Undo/redo and Download stay visible with the panel collapsed; the placed list opens from the status bar | ✅ (pending your check) |
+| 1b | Top bar actions and status bar | Undo/redo and Download stay visible with the panel collapsed; the placed list opens from the status bar | ✅ |
 | 2 | Placements of different kinds | All existing tests pass on the new model; image-only output renders identically to before | ✅ |
 | 3 | Text in `pdf-stamp` | `cargo test` stamps text on every corpus file; `pdftotext` reads it back exactly | ✅ |
 | 4 | Text tool in the app | Add and edit text in the browser; in the download it is selectable, searchable and where the preview showed it | ✅ (pending your check) |
 | 5 | Image text (other fonts) | Text in a script font saves as a crisp image, positioned as previewed | 🔜 |
-| 6 | Shapes, symbols and cover-up box | Draw each shape and symbol, style it, save; it matches the preview in Chrome and Acrobat | ⬜ |
+| 6 | Shapes and symbols | Draw each shape and symbol, style it, save; it matches the preview in Chrome and Acrobat | ✅ (pending your check) |
 
 ### Chunk 1: Tool rail and panels
 A UI-only refactor; no behaviour changes.
@@ -93,6 +92,7 @@ Added after chunk 4: the shared area under the tool panel (placed list, undo/red
   - **A hint for the moment** on the right (hidden below 640 px): editing, selected text, any selection, or the open tool. The hints that were in the sidebar and the Text panel moved here.
 - **Sidebar** is now only the rail and the tool panel.
 - **Verified (no browser):** typecheck, 47 web tests and the build pass.
+- **Follow-up, control sizes:** one `--control-h` (2 rem) for buttons, selects and text/number inputs, so rows line up; primary buttons are no taller than the rest (only the empty screen's "Open PDF…" stays large); text inputs and selects get the same border and radius as buttons; a visible focus ring for keyboard users. A fuller pass on buttons and inputs is still to do.
 - **Your checks:** collapse the panel and check undo, redo and Download still work; open the items list, step through entries, remove one, close it with Escape and by clicking outside; watch Unsaved changes → Downloaded after a download; check the hints change as you select, edit text and switch tools; narrow the window below 640 px.
 
 ### Chunk 2: Placements of different kinds
@@ -188,15 +188,32 @@ The model change everything after this builds on, made with only the existing ki
 - Previewed with the browser's own text rendering. On save, each such placement is drawn to a PNG at 300 DPI for its size (`document.fonts.load` first, as typed signatures do in `typedSignature.ts`) and sent as an image item. The Placed list and the panel mark it "image".
 - **Your check:** place script-font text, download, zoom to 400% in a viewer: crisp and in place.
 
-### Chunk 6: Shapes, symbols and cover-up box
+### Chunk 6: Shapes and symbols
 - **New `Item::Shape`** in Rust: a list of path segments (move, line, cubic curve, close) in the box's coordinate space, plus stroke colour and width, and fill colour or none. Ellipses use the usual four-curve approximation. Everything is drawn with PDF path operators (`m l c h S f B`).
 - **Shapes panel:** rectangle, ellipse, line. Drag on a page to draw one; click to add a default-sized one. Stroke colour, stroke width, fill (none or a colour).
 - **Lines** are stored by their two endpoints and edited with two handles instead of corners.
 - **Symbols:** ✓ ✗ ● ○ in the same panel, as fixed paths with locked aspect, sized like a 12 pt character by default, for ticking boxes on forms.
-- **Cover-up box:** a rectangle preset, white fill and no stroke. The panel says under it: "Hides content on screen and in print. The text underneath is still in the file and can be copied. Not a redaction."
+- ~~**Cover-up box**~~: built, then removed on 2026-10-13 (see §5.3).
 - **Preview:** the overlay draws shapes as SVG from the same path data that's sent to Rust.
 - **Tests:** Rust render tests per shape on the rotation and CropBox fixtures (pixels inside and outside the box); web tests for path generation and free resizing.
-- **Your check:** draw each shape and symbol on a normal and a rotated page, restyle them, save, and compare with the preview in Chrome and Acrobat. Put a cover-up box over text and confirm the warning is visible.
+- **Your check:** draw each shape and symbol on a normal and a rotated page, restyle them, save, and compare with the preview in Chrome and Acrobat. 
+
+**As built** (done before chunk 5)
+- **Rust** (`shape.rs`): `Segment` (`M`, `L`, `C`, `Z`, serde-tagged by `op`), `Stroke { color, width }`, and `Item::Shape { path, stroke: Option, fill: Option, rounded }`. Drawn as `1 0 0 1 x y cm`, then `1 J 1 j` if rounded, `RG`/`w`, `rg`, the path, and one paint operator (`S`, `f` or `B`). Refused as `BadPlacement`: an empty path, one not starting with a move, non-finite numbers, a non-positive width, or nothing to paint.
+- **Render tests** (`tests/shapes.rs`, poppler): on every fixture, a filled rectangle, a stroked ellipse and a thick line land where placed (filled inside, outline only on the ellipse's edge, dark along the line and clear beside it), and no pixel outside their boxes changes. Plus the operators for stroke + fill, and the refusals. The poppler render helper moved to `tests/common/` and now renders the **crop box** (display space; it rendered the media box before, which the corpus never noticed because no corpus file has a crop offset).
+- **Web** (`shapes.ts`, pure, 16 tests): `drawing(shape, style, w, h, ends)` builds the path the preview and the PDF share. Outlines are inset by half their width, so a shape stays inside its box. Symbols are drawn on a unit square with a weight of 12 % of their size (✓ and ✗ stroked with round caps, ● filled, ○ stroked). `dragGeometry`/`clickGeometry`/`lineBox`/`snapAngle` give the geometry for drawing.
+- **Lines** keep their ends relative to a box padded by half the line width plus 4 pt (easy to grab, caps never cut off). Selected lines show two round end handles instead of corners. Moving never resizes a line's box (`fixedSize`).
+- **Drawing:** with the Shapes tool, drag on empty page space to draw (Shift: square, circle, or a line snapped to 45°); a click adds a default size (rectangle 120 × 60, ellipse 100 × 70, line 120, symbols 12 pt) centred on it. A drawn shape, from press to release, is one undo step. The pointer is kept within the page.
+- **Shapes panel:** rectangle, ellipse, line; ✓ ✗ ● ○. Outline colour (or none, if filled), outline width (0.5–20 pt), fill (none, white or a colour). Symbols only have a colour. It edits the selected shape, or sets the style for new ones (remembered, like the drawing choice). "None" is only offered where the shape would still be visible.
+- **Resizing:** rectangles and ellipses freely (Shift keeps proportions); symbols keep proportions, down to 6 pt.
+- **Status bar:** names (“Rectangle”, “✓ Tick”, …) and hints for each drawing choice and selection.
+- **Size:** WASM 1,108,300 bytes raw (+27 KB).
+- **Verified (no browser):** Rust (17 unit, 13 stamping, 7 text, 3 shape render, 2 corpus, 7 server tests), 63 web tests, lint, fmt, `just wasm-smoke` (which now stamps a shape too) and the build pass. End to end without a browser: shapes made by the app's own drawing code, stamped by the WASM build on a rotated page and rendered by poppler, are dark exactly on their outlines, line and dot, and clear inside and beside them.
+- **Your checks:**
+  1. Shapes tool: draw a rectangle and an ellipse by dragging in each direction, with and without Shift; click for default sizes. Draw lines, with Shift for 45°, and drag their ends.
+  2. Place ✓ ✗ ● ○ by clicking and by dragging; resize them small.
+  3. Restyle: outline colour, width, fill, none. Undo/redo a drawing, a restyle, a resize, an end drag.
+  4. Download and compare with the preview in Chrome and Acrobat, including on a rotated page.
 
 ---
 
@@ -234,7 +251,8 @@ What changes against [the MVP architecture](mvp-plan.md#6-architecture):
 - Typographic quotes, dashes, €, and accented Western European letters are in WinAnsi. Polish, Czech, Greek, Cyrillic, CJK and emoji are not.
 - Users paste text from elsewhere, so this will happen. Flag it while typing, offer image text, and never silently replace characters.
 
-### 5.3 Cover-up is not redaction
+### 5.3 Covering is not redaction
+- The cover-up box preset was removed. A filled rectangle can still be drawn over content, and the same caution applies to it.
 - A box drawn over text hides it from view and print, but the text is still in the page content: anyone can select, copy or extract it.
 - **"Print to PDF" usually does not fix this.** Chrome's and Windows' Print to PDF keep text as text, so the hidden text survives under the box. Only rasterising the page (an image of the page, e.g. Acrobat's "Print as image") removes it.
 - Real redaction is a possible later chunk (§7): rasterise affected pages in the app with pdf.js at 300 DPI and replace their content with the image.

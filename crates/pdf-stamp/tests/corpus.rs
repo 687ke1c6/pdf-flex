@@ -13,6 +13,8 @@
 //! checks are skipped with a message rather than failing. Outputs are written to
 //! `target/tmp/corpus/` for checking by eye.
 
+mod common;
+
 use std::{
     fs,
     io::{Cursor, Write},
@@ -20,6 +22,7 @@ use std::{
     process::{Command, Stdio},
 };
 
+use common::{DPI, Gray, render};
 use lopdf::Document;
 use pdf_stamp::{Error, Font, Item, Line, PageGeometry, Placement, inspect, load, stamp};
 
@@ -331,56 +334,6 @@ fn find_text(pdf: &[u8], placements: &[Placement]) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-/// Resolution for render comparisons: 1 pixel = 1 pt.
-const DPI: u32 = 72;
-
-struct Gray {
-    width: usize,
-    height: usize,
-    pixels: Vec<u8>,
-}
-
-fn render(pdf: &[u8], page: u32) -> Result<Gray, String> {
-    let mut child = Command::new("pdftoppm")
-        .args([
-            "-gray",
-            "-r",
-            &DPI.to_string(),
-            "-f",
-            &page.to_string(),
-            "-l",
-            &page.to_string(),
-            "-",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    // Feed stdin from a thread so a large page can't deadlock on a full pipe.
-    let mut stdin = child.stdin.take().unwrap();
-    let input = pdf.to_vec();
-    let writer = std::thread::spawn(move || stdin.write_all(&input));
-    let out = child.wait_with_output().unwrap();
-    let _ = writer.join();
-    // Binary PGM: "P5\n<w> <h>\n255\n<pixels>".
-    let mut fields = out.stdout.splitn(4, |&b| b.is_ascii_whitespace());
-    let (magic, w, h) = (fields.next(), fields.next(), fields.next());
-    if magic != Some(b"P5".as_slice()) {
-        return Err(format!("pdftoppm couldn't render page {page}"));
-    }
-    let num =
-        |f: Option<&[u8]>| -> usize { std::str::from_utf8(f.unwrap()).unwrap().parse().unwrap() };
-    let (width, height) = (num(w), num(h));
-    let rest = fields.next().unwrap();
-    let start = rest.iter().position(|&b| b == b'\n').unwrap() + 1;
-    Ok(Gray {
-        width,
-        height,
-        pixels: rest[start..].to_vec(),
-    })
 }
 
 /// The stamp must be black where it was placed, and nothing else may change

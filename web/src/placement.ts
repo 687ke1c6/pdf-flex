@@ -3,6 +3,7 @@
 // The screen is CSS pixels from the page's top-left, y down.
 
 import type { PageSize } from "./pdf";
+import { drawing, isSymbol, type Segment, type ShapeKind, type ShapeStyle } from "./shapes";
 import { hexToRgb, layoutText, standardFont, type TextStyle } from "./textLayout";
 
 /** What every placed item has: where it is. Moving, clamping and undo only use this. */
@@ -31,9 +32,17 @@ export interface TextPlacement extends PlacedBox {
   style: TextStyle;
 }
 
+/** A vector shape or symbol. Its path is built from the box (see shapes.ts). */
+export interface ShapePlacement extends PlacedBox {
+  kind: "shape";
+  shape: ShapeKind;
+  style: ShapeStyle;
+  /** A line's two ends, relative to the box's bottom-left corner. */
+  ends?: [Point, Point];
+}
+
 /** Anything placed on a page. Each kind adds what it draws. */
-export type Placement = ImagePlacement | TextPlacement;
-export type PlacementKind = Placement["kind"];
+export type Placement = ImagePlacement | TextPlacement | ShapePlacement;
 
 export type Box = Pick<PlacedBox, "x" | "y" | "width" | "height">;
 export interface Point {
@@ -53,8 +62,11 @@ export const MIN_WIDTH = 20;
 /** Smallest width or height when resizing freely, in points. */
 export const MIN_SIDE = 2;
 
-/** Whether resizing keeps the aspect ratio. Free kinds (shapes, later) lock it only with Shift. */
-export const keepsAspect = (kind: PlacementKind): boolean => kind === "image" || kind === "text";
+/** Whether resizing keeps the aspect ratio. Rectangles and ellipses keep it only with Shift. */
+export const keepsAspect = (p: Placement): boolean => p.kind !== "shape" || isSymbol(p.shape);
+
+/** Whether moving must never resize the box, because its contents are laid out to fit it exactly. */
+export const fixedSize = (p: Placement): boolean => p.kind === "text" || (p.kind === "shape" && p.shape === "line");
 
 /** Where a box appears on screen, relative to its page's top-left. */
 export function toCss(box: Box, page: PageSize, scale: number): CssBox {
@@ -108,7 +120,7 @@ export function moved(box: Box, dx: number, dy: number, page: PageSize): Box {
  * Resizes by dragging `corner` to `pointer`, keeping the opposite corner fixed
  * and the box's aspect ratio. The box can't flip past its anchor or leave the page.
  */
-export function resized(box: Box, corner: Corner, pointer: Point, page: PageSize): Box {
+export function resized(box: Box, corner: Corner, pointer: Point, page: PageSize, minWidth = MIN_WIDTH): Box {
   const aspect = box.width / box.height;
   const right = corner === "ne" || corner === "se";
   const up = corner === "nw" || corner === "ne";
@@ -121,7 +133,7 @@ export function resized(box: Box, corner: Corner, pointer: Point, page: PageSize
     right ? page.width - anchor.x : anchor.x,
     (up ? page.height - anchor.y : anchor.y) * aspect,
   );
-  const width = Math.min(maxWidth, Math.max(MIN_WIDTH, dx, dy * aspect));
+  const width = Math.min(maxWidth, Math.max(minWidth, dx, dy * aspect));
   const height = width / aspect;
   return {
     width,
@@ -171,6 +183,13 @@ export type StandardFont =
 export type StampItem =
   | { kind: "image"; image: number }
   | {
+      kind: "shape";
+      path: Segment[];
+      stroke: { color: [number, number, number]; width: number } | null;
+      fill: [number, number, number] | null;
+      rounded: boolean;
+    }
+  | {
       kind: "text";
       font: StandardFont;
       /** Points. */
@@ -205,6 +224,16 @@ export function toStampArgs(placements: Placement[]): { signatureIds: string[]; 
           size: p.style.size,
           color: hexToRgb(p.style.color),
           lines: lines.filter((l) => l.text).map(({ text, x, y }) => ({ text, x, y })),
+        };
+      }
+      case "shape": {
+        const d = drawing(p.shape, p.style, p.width, p.height, p.ends);
+        return {
+          kind: "shape",
+          path: d.path,
+          stroke: d.stroke && { color: hexToRgb(d.stroke.color), width: d.stroke.width },
+          fill: d.fill ? hexToRgb(d.fill) : null,
+          rounded: d.rounded,
         };
       }
     }

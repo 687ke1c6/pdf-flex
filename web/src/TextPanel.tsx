@@ -106,6 +106,9 @@ export function TextPanel(props: { currentPage: number }) {
             )}
           </For>
         </div>
+      </div>
+
+      <div class="text-row">
         <span class="colors" role="group" aria-label="Colour">
           <For each={COLORS}>
             {(color) => (

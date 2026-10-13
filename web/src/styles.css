@@ -7,6 +7,8 @@
   --accent: #2563eb;
   --danger-bg: #fde8e8;
   --danger: #8a1c1c;
+  /* One height for buttons, selects and text inputs, so rows of controls line up. */
+  --control-h: 2rem;
   font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--text);
 }
@@ -24,21 +26,29 @@ html, body, #root { height: 100%; margin: 0; }
 .toolbar .spacer { flex: 1; }
 .toolbar .separator { align-self: stretch; width: 1px; margin: 0.15rem 0.25rem; background: var(--border); }
 .edit-actions { display: inline-flex; align-items: center; gap: 0.25rem; }
-.icon-button { padding: 0.15rem 0.5rem; font-size: 1.1rem; line-height: 1.2; }
-button.download { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.8rem; margin-left: 0.25rem; }
+.icon-button { padding: 0 0.55rem; font-size: 1.1rem; }
+button.download { margin-left: 0.25rem; }
 button.download svg { width: 1.1rem; height: 1.1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 640px) {
   button.download .label { display: none; }
-  button.download { padding: 0.3rem 0.5rem; }
+  button.download { padding: 0 0.55rem; }
 }
 .page-nav input { width: 4.5em; margin: 0 0.3em; }
 .zoom { display: inline-flex; align-items: center; gap: 0.25rem; }
 .zoom-value { min-width: 3.5em; text-align: center; font-variant-numeric: tabular-nums; }
 
-button, select, input { font: inherit; }
-button { padding: 0.25rem 0.6rem; border: 1px solid var(--border); border-radius: 4px; background: white; cursor: pointer; }
-button:hover { border-color: #999; }
-button.primary { background: var(--accent); border-color: var(--accent); color: white; padding: 0.5rem 1.2rem; }
+button, select, input { font: inherit; color: inherit; }
+button, select, input[type="text"], input[type="number"] { height: var(--control-h); }
+button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
+  padding: 0 0.7rem; border: 1px solid var(--border); border-radius: 4px; background: white; cursor: pointer;
+}
+select, input[type="text"], input[type="number"] { padding: 0 0.4rem; border: 1px solid var(--border); border-radius: 4px; background: white; }
+button:hover, select:hover { border-color: #999; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: white; padding: 0 0.9rem; }
+/* The one big call to action, on the empty screen. */
+.empty button.primary { height: auto; padding: 0.55rem 1.3rem; }
 
 .error {
   display: flex; gap: 1rem; align-items: center; justify-content: space-between;
@@ -94,10 +104,10 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .sidebar .section-head button.icon:hover:not(:disabled) { color: inherit; }
 button.icon:disabled { opacity: 0.35; cursor: default; }
 .sidebar .hint { color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0; }
-button.block { display: block; width: 100%; margin: 0.25rem 0; }
-button.link { border: none; background: none; padding: 0; color: var(--accent); text-align: left; }
+button.block { display: flex; width: 100%; margin: 0.25rem 0; }
+button.link { height: auto; display: inline; border: none; background: none; padding: 0; color: var(--accent); text-align: left; }
 button.link:hover { text-decoration: underline; }
-button.icon { border: none; background: none; padding: 0 0.3rem; font-size: 1.1rem; line-height: 1; color: var(--muted); }
+button.icon { height: auto; border: none; background: none; padding: 0 0.3rem; font-size: 1.1rem; line-height: 1; color: var(--muted); }
 button.icon:hover { color: var(--danger); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -108,7 +118,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   background: var(--panel); border-top: 1px solid var(--border);
 }
 .status-bar .spacer { flex: 1; }
-.status-items { border: none; background: none; padding: 0.1rem 0.4rem; color: var(--text); border-radius: 4px; }
+.status-items { height: 1.6rem; border: none; background: none; padding: 0 0.4rem; color: var(--text); border-radius: 4px; }
 .status-items:hover, .status-items.open { background: rgb(0 0 0 / 0.06); }
 .status-unsaved { color: #9a5b00; }
 .status-unsaved::before { content: "● "; }
@@ -168,10 +178,27 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .text-backdrop { color: transparent; pointer-events: none; }
 .text-backdrop mark { color: transparent; background: rgb(220 38 38 / 0.15); text-decoration: underline wavy #dc2626; }
 
+/* Shapes on a page, and their tool */
+.page-overlay.draw-shape { cursor: crosshair; }
+.shape-preview { display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.placement.line:not(.selected) { outline-color: transparent; }
+.handle.end { border-radius: 50%; cursor: move; }
+.shapes-panel h3 { font-size: 0.8rem; font-weight: 600; color: var(--muted); margin: 0.9rem 0 0.4rem; }
+.shape-tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.3rem; }
+.shape-tools button { height: 2.25rem; padding: 0; }
+.shape-tools button.active { background: rgb(37 99 235 / 0.12); border-color: var(--accent); color: var(--accent); }
+.shape-tools svg { width: 1.3rem; height: 1.3rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.shape-tools svg.filled { fill: currentColor; }
+.shape-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+.shape-label { width: 3.6rem; flex: none; color: var(--muted); font-size: 0.85rem; }
+.shape-row .size { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
+.shape-row .size input { width: 4.2em; }
+.swatch.none { background: linear-gradient(to top right, white calc(50% - 1px), #dc2626 50%, white calc(50% + 1px)); }
+
 /* Text panel */
 .text-panel h3 { font-size: 0.8rem; font-weight: 600; color: var(--muted); margin: 0.9rem 0 0.4rem; }
 .segmented { display: flex; }
-.segmented button { flex: 1; border-radius: 0; margin-left: -1px; padding: 0.3rem 0.4rem; }
+.segmented button { flex: 1; border-radius: 0; margin-left: -1px; padding: 0 0.5rem; }
 .segmented button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
 .segmented button:last-child { border-radius: 0 4px 4px 0; }
 .segmented button.active { background: rgb(37 99 235 / 0.12); border-color: var(--accent); color: var(--accent); position: relative; }
@@ -217,6 +244,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .tabs button.active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
 .font-options { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin: 0.6rem 0; }
 .font-options button {
+  display: block; height: auto;
   font-size: 2rem; line-height: 1.2; padding: 0.6rem 0.5rem; min-height: 4.2rem; background: white;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }

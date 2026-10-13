@@ -3,6 +3,27 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { useEditor } from "./editor";
 import type { Placement } from "./placement";
+import { isSymbol, type ShapeKind } from "./shapes";
+
+const SHAPE_NAMES: Record<ShapeKind, string> = {
+  rect: "Rectangle",
+  ellipse: "Ellipse",
+  line: "Line",
+  check: "✓ Tick",
+  cross: "✗ Cross",
+  dot: "● Dot",
+  circle: "○ Circle",
+};
+
+const DRAW_HINTS: Record<ShapeKind, string> = {
+  rect: "Drag on a page to draw a rectangle (Shift: square), or click for a default size",
+  ellipse: "Drag on a page to draw an ellipse (Shift: circle), or click for a default size",
+  line: "Drag on a page to draw a line (Shift: straight or 45°), or click for a default line",
+  check: "Click on a page to place a tick, or drag to size it",
+  cross: "Click on a page to place a cross, or drag to size it",
+  dot: "Click on a page to place a dot, or drag to size it",
+  circle: "Click on a page to place a circle, or drag to size it",
+};
 
 interface Props {
   onGoToPage(page: number): void;
@@ -32,6 +53,8 @@ export function StatusBar(props: Props) {
         const first = p.text.trim().split("\n")[0];
         return first ? `“${first.length > 24 ? `${first.slice(0, 23)}…` : first}”` : "Text";
       }
+      case "shape":
+        return SHAPE_NAMES[p.shape];
     }
   };
 
@@ -40,8 +63,12 @@ export function StatusBar(props: Props) {
   const hint = () => {
     if (editor.editing()) return "Escape or click elsewhere to finish editing";
     if (editor.selectedText()) return "Enter or double-click to edit · Arrow keys nudge (Shift: 10 pt) · Delete removes";
+    const shape = editor.selectedShape();
+    if (shape?.ends) return "Drag the ends to change the line · Arrow keys nudge (Shift: 10 pt) · Delete removes";
+    if (shape && !isSymbol(shape.shape)) return "Drag a corner to resize (Shift: keep proportions) · Arrow keys nudge · Delete removes";
     if (editor.selected()) return "Arrow keys nudge (Shift: 10 pt) · Delete removes";
     if (editor.tool() === "text") return "Click on a page to add text";
+    if (editor.tool() === "shapes") return DRAW_HINTS[editor.shapeTool()];
     return "Drag a signature onto a page to place it";
   };
 

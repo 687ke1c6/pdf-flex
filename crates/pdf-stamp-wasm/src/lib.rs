@@ -58,7 +58,11 @@ pub fn inspect(pdf: &[u8]) -> Result<Inspection, JsError> {
 ///   - `{ kind: "text", font, size, color, lines }`: `font` is a standard
 ///     font's PostScript name (`"Helvetica"`, `"Times-Bold"`, …), `color` is
 ///     `[r, g, b]` in 0–255, and `lines` are `{ text, x, y }` baselines
-///     relative to the box's bottom-left corner.
+///     relative to the box's bottom-left corner;
+///   - `{ kind: "shape", path, stroke, fill, rounded }`: `path` is
+///     `{ op: "M" | "L", x, y }`, `{ op: "C", x1, y1, x2, y2, x, y }` and
+///     `{ op: "Z" }` steps in points from the box's bottom-left corner;
+///     `stroke` is `{ color, width }` or null, `fill` a colour or null.
 ///
 /// Throws on invalid input.
 #[wasm_bindgen]

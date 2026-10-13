@@ -3,6 +3,8 @@ import { For, Match, Show, Switch } from "solid-js";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
 import type { PageSize } from "./pdf";
 import { keepsAspect, resized, resizedFree, toCss, toPoints, type Corner, type Placement, type Point } from "./placement";
+import { ShapePreview } from "./ShapeBox";
+import { clickGeometry, dragGeometry, isSymbol } from "./shapes";
 import { TextEditor, TextPreview } from "./TextBox";
 import { unsupportedChars } from "./winansi";
 
@@ -39,7 +41,16 @@ export function PageOverlay(props: Props) {
     e.dataTransfer.dropEffect = "copy";
   }
 
-  /** Clicking empty page space adds text with the Text tool, and otherwise clears the selection. */
+  /** A pointer position on this page, kept within it. */
+  const onPage = (e: { clientX: number; clientY: number }, layer: Element): Point => {
+    const pt = pointerOnPage(e, layer);
+    return { x: Math.min(Math.max(pt.x, 0), props.size.width), y: Math.min(Math.max(pt.y, 0), props.size.height) };
+  };
+
+  /**
+   * Clicking empty page space adds text with the Text tool, draws a shape with
+   * the Shapes tool, and otherwise clears the selection.
+   */
   function onEmptySpace(e: PointerEvent) {
     if (e.target !== e.currentTarget) return;
     if (editor.tool() === "text" && e.button === 0) {
@@ -48,7 +59,40 @@ export function PageOverlay(props: Props) {
       editor.addText(props.pageNumber, pointerOnPage(e, e.currentTarget as Element));
       return;
     }
+    if (editor.tool() === "shapes" && e.button === 0) {
+      e.preventDefault();
+      drawShape(e, e.currentTarget as Element);
+      return;
+    }
     editor.select(null);
+  }
+
+  /** Drags out a new shape from where the pointer went down; a click adds a default-sized one. */
+  function drawShape(e: PointerEvent, layer: Element) {
+    const shape = editor.shapeTool();
+    const strokeWidth = editor.shapeStyle().strokeWidth;
+    const start = onPage(e, layer);
+    const page = props.pageNumber;
+    let id: string | undefined;
+    const move = (m: PointerEvent) => {
+      if (m.pointerId !== e.pointerId) return;
+      // A few pixels of movement before it counts as a drag rather than a click.
+      if (!id && Math.hypot(m.clientX - e.clientX, m.clientY - e.clientY) < 4) return;
+      const geometry = dragGeometry(shape, start, onPage(m, layer), m.shiftKey, strokeWidth);
+      if (id) editor.drawShape(id, geometry);
+      else id = editor.addShape(page, geometry);
+    };
+    const end = (u: PointerEvent) => {
+      if (u.pointerId !== e.pointerId) return;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      if (!id && u.type === "pointerup") editor.addShape(page, clickGeometry(shape, start, strokeWidth));
+      editor.endChange();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
   }
 
   function onDrop(e: DragEvent) {
@@ -62,14 +106,16 @@ export function PageOverlay(props: Props) {
   return (
     <div
       class="page-overlay"
-      classList={{ "add-text": editor.tool() === "text" }}
+      classList={{ "add-text": editor.tool() === "text", "draw-shape": editor.tool() === "shapes" }}
       data-page={props.pageNumber}
       onDragOver={onDragOver}
       onDrop={onDrop}
       onPointerDown={onEmptySpace}
     >
       <For each={onThisPage()}>
-        {(placement) => <PlacementBox placement={placement} size={props.size} scale={props.scale} pointerOnPage={pointerOnPage} />}
+        {(placement) => (
+          <PlacementBox placement={placement} size={props.size} scale={props.scale} pointerOnPage={pointerOnPage} onPage={onPage} />
+        )}
       </For>
     </div>
   );
@@ -80,6 +126,8 @@ interface BoxProps {
   size: PageSize;
   scale: number;
   pointerOnPage(e: PointerEvent, layer: Element): { x: number; y: number };
+  /** Like `pointerOnPage`, kept within the page. */
+  onPage(e: PointerEvent, layer: Element): Point;
 }
 
 function PlacementBox(props: BoxProps) {
@@ -148,11 +196,24 @@ function PlacementBox(props: BoxProps) {
       return;
     }
     track(e, (m) => {
-      // Free kinds keep their proportions while Shift is held.
-      const resize = keepsAspect(start.kind) || m.shiftKey ? resized : resizedFree;
-      editor.update(id, resize(start, corner, props.pointerOnPage(m, layer), props.size), undefined, `resize:${id}`);
+      const pointer = props.pointerOnPage(m, layer);
+      // Rectangles and ellipses keep their proportions only while Shift is held.
+      const box =
+        keepsAspect(start) || m.shiftKey
+          ? resized(start, corner, pointer, props.size, start.kind === "shape" && isSymbol(start.shape) ? 6 : undefined)
+          : resizedFree(start, corner, pointer, props.size);
+      editor.update(id, box, undefined, `resize:${id}`);
     });
   }
+
+  /** Drags one end of a line. */
+  function startEnd(e: PointerEvent, end: 0 | 1) {
+    const layer = (e.currentTarget as HTMLElement).closest(".page-overlay")!;
+    const id = props.placement.id;
+    track(e, (m) => editor.moveLineEnd(id, end, props.onPage(m, layer)));
+  }
+
+  const lineEnds = () => (props.placement.kind === "shape" ? props.placement.ends : undefined);
 
   return (
     <div
@@ -160,6 +221,7 @@ function PlacementBox(props: BoxProps) {
       classList={{
         selected: isSelected(),
         text: props.placement.kind === "text",
+        line: !!lineEnds(),
         invalid: props.placement.kind === "text" && unsupportedChars(props.placement.text).length > 0,
       }}
       style={{
@@ -175,6 +237,7 @@ function PlacementBox(props: BoxProps) {
         <Match when={props.placement.kind === "image" && editor.signature(props.placement.signatureId)}>
           {(sig) => <img src={sig().url} alt={sig().name} draggable={false} />}
         </Match>
+        <Match when={props.placement.kind === "shape" && props.placement}>{(shape) => <ShapePreview placement={shape()} />}</Match>
         <Match when={props.placement.kind === "text" && props.placement}>
           {(text) => (
             <Show when={editor.editing() === text().id} fallback={<TextPreview placement={text()} />}>
@@ -184,7 +247,25 @@ function PlacementBox(props: BoxProps) {
         </Match>
       </Switch>
       <Show when={isSelected()}>
-        <For each={CORNERS}>{(corner) => <div class={`handle ${corner}`} onPointerDown={(e) => startResize(e, corner)} />}</For>
+        <Show
+          when={lineEnds()}
+          fallback={<For each={CORNERS}>{(corner) => <div class={`handle ${corner}`} onPointerDown={(e) => startResize(e, corner)} />}</For>}
+        >
+          {(ends) => (
+            <For each={[0, 1] as const}>
+              {(end) => (
+                <div
+                  class="handle end"
+                  style={{
+                    left: `${ends()[end].x * props.scale}px`,
+                    top: `${(props.placement.height - ends()[end].y) * props.scale}px`,
+                  }}
+                  onPointerDown={(e) => startEnd(e, end)}
+                />
+              )}
+            </For>
+          )}
+        </Show>
         <button
           class="remove"
           title="Remove (Delete)"

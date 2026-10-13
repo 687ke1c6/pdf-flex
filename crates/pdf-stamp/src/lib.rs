@@ -1,4 +1,4 @@
-//! Stamp images and text onto PDF pages.
+//! Stamp images, text and shapes onto PDF pages.
 //!
 //! Placements are given in **display space**: PDF points (1/72 in) with the
 //! origin at the bottom-left of the page *as a viewer shows it*, i.e. after the
@@ -7,6 +7,7 @@
 
 mod geometry;
 mod repair;
+pub mod shape;
 #[doc(hidden)]
 pub mod testpdf;
 pub mod text;
@@ -22,6 +23,7 @@ use lopdf::{
 };
 
 pub use geometry::{LETTER, Matrix, PageGeometry};
+pub use shape::{Segment, Stroke};
 pub use text::{Font, Line};
 
 /// No single compressed stream in the input may expand beyond this many bytes
@@ -67,6 +69,15 @@ pub enum Item {
         /// Fill colour as 0–255 RGB.
         color: [u8; 3],
         lines: Vec<Line>,
+    },
+    /// A vector path in points from the box's bottom-left corner, stroked
+    /// and/or filled. `rounded` gives round line caps and joins.
+    Shape {
+        path: Vec<Segment>,
+        stroke: Option<Stroke>,
+        fill: Option<[u8; 3]>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        rounded: bool,
     },
 }
 
@@ -309,6 +320,7 @@ pub fn stamp(pdf: &[u8], images: &[&[u8]], placements: &[Placement]) -> Result<V
                     slot.insert(add_image(&mut doc, &decoded));
                 }
             }
+            Item::Shape { .. } => {}
             Item::Text { font, .. } => {
                 font_ids.entry(font).or_insert_with(|| {
                     doc.add_object(dictionary! {
@@ -343,6 +355,7 @@ pub fn stamp(pdf: &[u8], images: &[&[u8]], placements: &[Placement]) -> Result<V
                         slot.insert(name);
                     }
                 }
+                Item::Shape { .. } => {}
                 Item::Text { font, .. } => {
                     if let Entry::Vacant(slot) = font_names.entry(font) {
                         let name =
@@ -373,6 +386,16 @@ pub fn stamp(pdf: &[u8], images: &[&[u8]], placements: &[Placement]) -> Result<V
                     let name = &font_names[font];
                     write_text(&mut ops, p, name, *font, *size, *color, lines)?;
                 }
+                Item::Shape {
+                    path,
+                    stroke,
+                    fill,
+                    rounded,
+                } => {
+                    write!(ops, "1 0 0 1 {} {} cm", p.x, p.y)
+                        .expect("writing to a Vec cannot fail");
+                    shape::write(&mut ops, path, stroke.as_ref(), fill.as_ref(), *rounded);
+                }
             }
             ops.extend_from_slice(b" Q\n");
         }
@@ -393,6 +416,15 @@ fn check_item(item: &Item, index: usize, image_count: usize) -> Result<()> {
             count: image_count,
         }),
         Item::Image { .. } => Ok(()),
+        Item::Shape {
+            path, stroke, fill, ..
+        } => {
+            if shape::is_valid(path, stroke.as_ref(), fill.as_ref()) {
+                Ok(())
+            } else {
+                Err(Error::BadPlacement { index })
+            }
+        }
         Item::Text {
             font, size, lines, ..
         } => {
