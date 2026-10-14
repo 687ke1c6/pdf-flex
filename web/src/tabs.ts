@@ -87,8 +87,7 @@ export function createSession(init: { id: string; name: string; bytes: Uint8Arra
       createdAt: init.draft?.createdAt ?? Date.now(),
       fileSaved: !!init.draft,
     };
-    const autosave = createAutosave({
-      doc: () => draftDoc,
+    const autosave = createAutosave(draftDoc, {
       version: () => JSON.stringify(state.placements),
       placements: () => snapshotOf(state),
       signatures: () => editor.usedSignatures(state),

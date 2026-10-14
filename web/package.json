@@ -7,7 +7,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test --conditions browser"
   },
   "dependencies": {
     "@fontsource/allura": "5.3.0",

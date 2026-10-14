@@ -5,7 +5,7 @@ default:
 # Run all tests (Rust + web unit tests)
 test:
     cargo test --workspace
-    cd web && bun test
+    cd web && bun run test
 
 # Lint with clippy (warnings are errors)
 lint:

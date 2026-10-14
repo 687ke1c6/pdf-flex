@@ -1,11 +1,14 @@
 // Autosave: keeps a draft of the open document in this browser as you work.
-import { createEffect, createSignal, on } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, on, untrack } from "solid-js";
 import { DRAFT_VERSION, draftStore } from "./draftStore";
 import type { Placement } from "./placement";
 import type { StoredSignature } from "./signatureStore";
 
 /** Wait after the last change before saving, so typing doesn't write on every key. */
 export const SAVE_DELAY_MS = 1000;
+
+/** Longest `flush` waits, so a stuck write (e.g. storage blocked by another tab) can't hold up opening or closing a document. */
+export const FLUSH_LIMIT_MS = 3000;
 
 const ENABLED_KEY = "pdf-flex:drafts";
 
@@ -47,61 +50,65 @@ export type AutosaveState =
   | { status: "error"; message: string };
 
 interface Source {
-  doc(): DraftDocument | null;
   /** The placements, serialised: changes to it are what get saved. Tracked. */
   version(): string;
   placements(): Placement[];
   signatures(): StoredSignature[];
 }
 
-export function createAutosave(source: Source) {
-  const [state, setState] = createSignal<AutosaveState>({ status: "idle" });
+/** Keeps `doc`'s draft up to date. Each open document has its own. */
+export function createAutosave(doc: DraftDocument, source: Source, store: Pick<typeof draftStore, "save"> = draftStore) {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  /** What's in storage for the current document (or what it had when opened). */
-  let saved = "";
-  /** When this document's draft was last written in this session, if it has been. */
-  let savedAt: number | undefined;
+  /** The write that's running, if one is: there's never more than one. */
+  let running: Promise<void> | undefined;
+  /** The version whose write last failed: not tried again until the document changes. */
+  let failed: string | undefined;
+  /** What's in storage for the document (at first, what it was opened with: nothing to save yet). */
+  const [saved, setSaved] = createSignal(untrack(source.version));
+  /** When the draft was last written in this session, if it has been. */
+  const [savedAt, setSavedAt] = createSignal<number>();
+  const [saving, setSaving] = createSignal(false);
+  /** Why the last save failed, until one works. */
+  const [error, setError] = createSignal<string>();
 
-  // A new document starts from what it was opened with: nothing to save yet.
-  createEffect(
-    on(source.doc, () => {
-      clearTimeout(timer);
-      timer = undefined;
-      saved = source.version();
-      savedAt = undefined;
-      setState({ status: "idle" });
-    }),
-  );
+  const changed = () => source.version() !== saved();
+  const due = () => draftsEnabled() && changed() && source.version() !== failed;
 
-  createEffect(
-    on(
-      source.version,
-      (version) => {
-        if (!source.doc() || !draftsEnabled()) return;
-        clearTimeout(timer);
-        timer = undefined;
-        // Back to what's stored (e.g. undo): saved again, if it was saved this session.
-        if (version === saved) {
-          if (state().status !== "error") setState(savedAt ? { status: "saved", at: savedAt } : { status: "idle" });
-          return;
-        }
-        // "Saved" only while nothing is waiting to be saved; a failure stays shown until a save works.
-        if (state().status === "saved") setState({ status: "idle" });
-        timer = setTimeout(save, SAVE_DELAY_MS);
-      },
-      { defer: true },
-    ),
-  );
+  // Worked out from the above, never set directly.
+  const state = createMemo<AutosaveState>(() => {
+    if (saving()) return { status: "saving" };
+    const message = error();
+    // A failure only matters while the document differs from what's stored (undo can bring it back).
+    if (message && changed()) return { status: "error", message };
+    const at = savedAt();
+    return at && !changed() ? { status: "saved", at } : { status: "idle" };
+  });
 
-  async function save() {
-    timer = undefined;
-    const doc = source.doc();
-    if (!doc || !draftsEnabled()) return;
+  /** (Re)starts the wait before saving, if there's anything to save. */
+  function schedule() {
+    clearTimeout(timer);
+    timer = due() ? setTimeout(() => void save(), SAVE_DELAY_MS) : undefined;
+  }
+
+  // Each change restarts the wait, so a drag or typing is saved once it pauses.
+  // Turning drafts on saves what changed while they were off; turning them off cancels the wait.
+  createEffect(on([source.version, draftsEnabled], () => schedule(), { defer: true }));
+
+  /** Writes the document as it is now, or joins the write already running. Changes made meanwhile wait for the next one. */
+  function save(): Promise<void> {
+    running ??= write().finally(() => {
+      running = undefined;
+      schedule();
+    });
+    return running;
+  }
+
+  async function write() {
     const version = source.version();
-    setState({ status: "saving" });
+    const now = Date.now();
+    setSaving(true);
     try {
-      const now = Date.now();
-      await draftStore.save(
+      await store.save(
         {
           id: doc.id,
           version: DRAFT_VERSION,
@@ -116,26 +123,41 @@ export function createAutosave(source: Source) {
         doc.fileSaved ? undefined : doc.bytes,
       );
       doc.fileSaved = true;
-      saved = version;
-      savedAt = now;
-      // Changed again while saving: the next save is already waiting.
-      setState(source.version() === version ? { status: "saved", at: now } : { status: "idle" });
+      failed = undefined;
+      batch(() => {
+        setSaved(version);
+        setSavedAt(now);
+        setError(undefined);
+      });
     } catch (err) {
-      const message = err instanceof DOMException && err.name === "QuotaExceededError" ? "the browser's storage is full" : String(err);
-      setState({ status: "error", message });
+      failed = version;
+      setError(err instanceof DOMException && err.name === "QuotaExceededError" ? "the browser's storage is full" : String(err));
+    } finally {
+      setSaving(false);
     }
+  }
+
+  /** Saves now without waiting, until storage matches the document or the latest version fails. */
+  async function catchUp() {
+    while (due() || running) {
+      clearTimeout(timer);
+      timer = undefined;
+      await save();
+    }
+  }
+
+  /** Catches up, waiting at most FLUSH_LIMIT_MS; past that, saving carries on in the background. */
+  function flush(): Promise<void> {
+    let limit: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => (limit = setTimeout(resolve, FLUSH_LIMIT_MS)));
+    return Promise.race([catchUp(), timeout]).finally(() => clearTimeout(limit));
   }
 
   return {
     state,
-    /** Saves now if a save is waiting. */
-    async flush() {
-      if (!timer) return;
-      clearTimeout(timer);
-      await save();
-    },
+    flush,
     /** Whether everything on the open document is in its draft. */
-    upToDate: () => draftsEnabled() && !timer && state().status !== "error" && source.version() === saved,
+    upToDate: () => draftsEnabled() && !saving() && !changed(),
   };
 }
 
