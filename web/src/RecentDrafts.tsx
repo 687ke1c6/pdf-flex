@@ -63,7 +63,6 @@ export function RecentDrafts(props: Props) {
             )}
           </For>
         </ul>
-        <p class="hint">Drafts are kept in this browser on this device until you discard them.</p>
       </section>
     </Show>
   );
