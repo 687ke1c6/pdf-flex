@@ -1,21 +1,21 @@
 import { batch, createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { documentId } from "./db";
-import { download } from "./download";
-import { ConfirmHost, askConfirm } from "./ConfirmDialog";
-import { DownloadButton, DownloadDialog } from "./DownloadDialog";
-import { draftStore, formatSavedAt, usablePlacements, type Draft } from "./draftStore";
-import { createDocState, SIGNATURE_DRAG_TYPE, useEditor } from "./editor";
-import { openPdf } from "./pdf";
-import { Sidebar } from "./Sidebar";
-import { QuickBar, toolForKey } from "./ToolRail";
-import { StatusBar } from "./StatusBar";
-import { inspectPdf, sameLayout, stampPdf } from "./stamper";
-import { clampZoom, stepZoom } from "./zoom";
-import { UpdatePrompt } from "./pwa";
-import { SettingsDialog } from "./SettingsDialog";
-import { NewSignatureDialog } from "./NewSignatureDialog";
-import { RecentDrafts } from "./RecentDrafts";
-import { TabBar } from "./TabBar";
+import { documentId } from "./common/db";
+import { download } from "./common/download";
+import { ConfirmHost, askConfirm } from "./common/ConfirmDialog";
+import { DownloadButton, DownloadDialog } from "./download/DownloadDialog";
+import { draftStore, formatSavedAt, usablePlacements, type Draft } from "./drafts/draftStore";
+import { createDocState, SIGNATURE_DRAG_TYPE, useEditor } from "./document/editor";
+import { openPdf } from "./viewer/pdf";
+import { Sidebar } from "./app/Sidebar";
+import { QuickBar, toolForKey } from "./app/ToolRail";
+import { StatusBar } from "./app/StatusBar";
+import { inspectPdf, sameLayout, stampPdf } from "./download/stamper";
+import { clampZoom, stepZoom } from "./viewer/zoom";
+import { UpdatePrompt } from "./app/pwa";
+import { SettingsDialog } from "./app/SettingsDialog";
+import { NewSignatureDialog } from "./signatures/NewSignatureDialog";
+import { RecentDrafts } from "./drafts/RecentDrafts";
+import { TabBar } from "./app/TabBar";
 import {
   createSession,
   arrangeTabs,
@@ -30,8 +30,8 @@ import {
   tabsMode,
   type DocSession,
   type Tab,
-} from "./tabs";
-import { Viewer, type ViewerApi } from "./Viewer";
+} from "./app/tabs";
+import { Viewer, type ViewerApi } from "./viewer/Viewer";
 
 export function App() {
   const editor = useEditor();
@@ -634,7 +634,7 @@ export function App() {
 
       <div class="body">
         <Show when={active()}>
-          {(s) => <Sidebar currentPage={s().page()} onError={setError} />}
+          <Sidebar onError={setError} />
         </Show>
         <main class="main">
           <Show

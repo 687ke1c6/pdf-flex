@@ -1,4 +1,4 @@
-// Generates src/fonts/metrics.ts: the advance widths of the 12 standard PDF text
+// Generates src/text/metrics.ts: the advance widths of the 12 standard PDF text
 // fonts over WinAnsiEncoding, plus ascender and descender, from Adobe's Core 14
 // AFM files. The output is committed; rerun only if the table format changes.
 //
@@ -121,6 +121,6 @@ export const FONT_METRICS: Record<StandardFont, FontMetrics> = {
 ${entries.join("\n")}
 };
 `;
-const target = new URL("../src/fonts/metrics.ts", import.meta.url).pathname;
+const target = new URL("../src/text/metrics.ts", import.meta.url).pathname;
 writeFileSync(target, out);
 console.log(`wrote ${target}`);

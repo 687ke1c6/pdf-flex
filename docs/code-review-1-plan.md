@@ -1,6 +1,6 @@
 # pdf-flex — Code review 1 plan
 
-Findings from `/code-review` on the autosave save-loop rewrite (uncommitted: `web/src/autosave.ts`, `web/src/autosave.test.ts`, `justfile`, `web/package.json`). Each one below has what's wrong, whether it holds up, a proposed fix and space for the decision.
+Findings from `/code-review` on the autosave save-loop rewrite (uncommitted: `web/src/drafts/autosave.ts`, `web/src/drafts/autosave.test.ts`, `justfile`, `web/package.json`). Each one below has what's wrong, whether it holds up, a proposed fix and space for the decision.
 
 **Status key:** ✅ done · 🔜 next · ⬜ not started · ❓ needs a decision
 
@@ -24,7 +24,7 @@ Findings from `/code-review` on the autosave save-loop rewrite (uncommitted: `we
 ## 2. Findings
 
 ### 1. `running` is shared across documents
-`web/src/autosave.ts:111`
+`web/src/drafts/autosave.ts:111`
 
 If the document changes while a save is running, the new document's `flush()` joins the old document's loop. That loop then exits (`source.doc() !== doc`) and the new document's change is never saved. `saving()` also shows the old document's save as the new one's.
 
@@ -37,7 +37,7 @@ If the document changes while a save is running, the new document's `flush()` jo
 **Decision:** A. `createAutosave(doc, source, store?)` takes the document itself, and `tabs.ts` passes its `draftDoc`. The "new document" effect, the document checks in the save loop and their test are gone. ✅
 
 ### 2. Back-to-back saves skip the 1 s wait
-`web/src/autosave.ts:121`
+`web/src/drafts/autosave.ts:121`
 
 During a long drag, `version` changes on every pointer move. Once one save is running, the `while` loop starts the next as soon as each finishes, so IndexedDB is written continuously, not once after the edits pause.
 
@@ -52,7 +52,7 @@ During a long drag, `version` changes on every pointer move. Once one save is ru
 **Decision:** Go ahead (keep autosave rather than saving only on close or on a Save button). Done: `schedule()` (re)starts the wait, `save()` writes once or joins the running write and restarts the wait afterwards, and `flush()` loops. Tests: edit during a save waits for the next pause; a 5 s drag starting during a save gives one more save. ✅
 
 ### 3. `flush()` can block open/close forever
-`web/src/autosave.ts:107`, called at `App.tsx:150`, `:221`, `:264`
+`web/src/drafts/autosave.ts:107`, called at `App.tsx:150`, `:221`, `:264`
 
 App awaits `flush()` before replacing, opening or closing a document. If `draftStore.save` never settles (e.g. the database open blocked by another tab: `db.ts` only logs `onblocked`), those actions hang with nothing shown.
 
@@ -65,7 +65,7 @@ App awaits `flush()` before replacing, opening or closing a document. If `draftS
 **Decision:** A. `flush()` waits at most `FLUSH_LIMIT_MS` (3 s), then returns; the save carries on in the background and still catches the draft up if storage recovers. Nothing is lost silently: each caller asks first when the draft isn't up to date (`atRisk`), so the user has already agreed to close. Test: a stuck save releases `flush()` after 3 s, and the draft catches up once storage answers. ✅
 
 ### 4. No retry after a failure that absorbed an edit
-`web/src/autosave.ts:138`
+`web/src/drafts/autosave.ts:138`
 
 Edit v1, and its save starts. Edit v2: its timer fires during the save and joins the loop. Then v1's save fails, the loop ends, and no wait is pending, so v2 isn't retried until another edit.
 
@@ -77,7 +77,7 @@ Edit v1, and its save starts. Edit v2: its timer fires during the save and joins
 **Decision:** Fixed by #2, with that test. ✅
 
 ### 5. Turning drafts back on doesn't save
-`web/src/autosave.ts:101`
+`web/src/drafts/autosave.ts:101`
 
 The effect that schedules saves only tracks `version`. Edits made while drafts are off aren't saved when they're turned back on, until the next edit.
 
@@ -89,7 +89,7 @@ The effect that schedules saves only tracks `version`. Edits made while drafts a
 **Decision:** Done. The effect tracks `[source.version, draftsEnabled]`, so turning drafts off also cancels a waiting save. Test: off → edit → on → saves after the wait. ✅
 
 ### 6. `.resolves` assertion not awaited
-`web/src/autosave.test.ts:165`
+`web/src/drafts/autosave.test.ts:165`
 
 **Holds up?** Yes: the assertion is never checked.
 
@@ -98,7 +98,7 @@ The effect that schedules saves only tracks `version`. Edits made while drafts a
 **Decision:** Done. ✅
 
 ### 7. `flush()` retries a failed save on every tab hide
-`web/src/autosave.ts:107`, via `flushAll` at `App.tsx:480`
+`web/src/drafts/autosave.ts:107`, via `flushAll` at `App.tsx:480`
 
 After a quota error, each hide or tab switch writes the whole draft again, and it fails again.
 

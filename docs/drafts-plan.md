@@ -48,7 +48,7 @@ The ground rules from [mvp-plan.md](mvp-plan.md) and [toolbox-plan.md](toolbox-p
 | 5 | Editable PDF (optional) | A downloaded PDF reopened in pdf-flex offers to continue editing; in other viewers it's an ordinary PDF | ⬜ |
 
 ### Chunk 1: Shared database and document identity
-- `web/src/db.ts`: one place that opens the `pdf-flex` IndexedDB with versioned upgrades. Version 2 adds a `drafts` store (key: document hash); `signatures` is unchanged, so existing libraries survive. `signatureStore.ts` uses it.
+- `web/src/common/db.ts`: one place that opens the `pdf-flex` IndexedDB with versioned upgrades. Version 2 adds a `drafts` store (key: document hash); `signatures` is unchanged, so existing libraries survive. `signatureStore.ts` uses it.
 - `documentId(bytes)`: SHA-256, hex.
 - **Tests:** the upgrade from version 1 keeps signatures (run against `fake-indexeddb` in `bun test`, or a hand-rolled check if adding a dev dependency isn't wanted); hashing is stable.
 

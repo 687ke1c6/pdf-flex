@@ -121,7 +121,7 @@ Work proceeds in small chunks. Each one ends with something you can run and chec
 - **Placing:** drag the signature thumbnail onto any page (it lands centred on the drop point), or click **Place on page N** for the current page. Default width is 150 pt (about 2 in), at most half the page width.
 - **Editing on the page:** click to select; drag to move; drag a corner handle to resize, with the aspect ratio locked and the opposite corner fixed. Boxes can't leave their page. Delete with the × button or the Delete/Backspace key; Escape or clicking empty page space deselects. Pointer events with `touch-action: none`, so touch works too.
 - **Placed list** in the sidebar: jump to a placement's page or remove it.
-- **Geometry** lives in `web/src/placement.ts`, pure functions with 13 `bun test` unit tests: screen to display-space conversion, move, resize, clamping, and the flat argument layout for WASM.
+- **Geometry** lives in `web/src/document/placement.ts`, pure functions with 13 `bun test` unit tests: screen to display-space conversion, move, resize, clamping, and the flat argument layout for WASM.
 - **Saving:** **Download signed PDF** sends the *original* bytes, the signature and the placements to a Web Worker running the WASM build, then downloads `<name>-signed.pdf`. Errors from Rust appear in the error banner.
 - **Build wiring:** `just wasm` now builds into `crates/pdf-stamp-wasm/pkg`, used by the web app (Vite alias `pdf-stamp-wasm`) and copied into the demo page by `just demo`. `just dev` and `just build` build the WASM first. `just test` runs the Rust and web tests.
 - **Not yet** (later chunks): moving a placement to a different page by dragging, undo/redo, arrow-key nudging (all done in chunk 8), storing the signature between sessions, background removal (chunk 5).
@@ -129,7 +129,7 @@ Work proceeds in small chunks. Each one ends with something you can run and chec
 - **Your check:** `just dev`, open a sample or your own PDF, load a signature, place it on a few pages (including a rotated one), move and resize, then download and open the result.
 
 ### Chunk 5: Signature library ✅
-- **IndexedDB store** (`web/src/signatureStore.ts`, hand-written, no dependency): database `pdf-flex`, store `signatures`, records `{ id, name, source: "import" | "typed" | "drawn", png: Blob, width, height, createdAt, lastUsedAt }`. Loaded at startup, most recently used first.
+- **IndexedDB store** (`web/src/signatures/signatureStore.ts`, hand-written, no dependency): database `pdf-flex`, store `signatures`, records `{ id, name, source: "import" | "typed" | "drawn", png: Blob, width, height, createdAt, lastUsedAt }`. Loaded at startup, most recently used first.
 - **Sidebar library:** thumbnails on a checkerboard. Click one to make it active (used by **Place on page N**); drag any of them onto a page. Rename inline (Enter saves, Escape cancels). Delete is disabled while that signature is placed in the open document.
 - **Import dialog:** choose or drop a PNG/JPEG, see a live preview, toggle **Remove background** and adjust the threshold slider, name it, **Save to library**. Done on a canvas in the browser (`signatureImage.ts`): pixels lighter than the threshold fade to transparent over a soft edge, ink keeps its colour, the result is trimmed to the ink with a small margin, and the longest side is capped at 1600 px. Background removal is off by default for images that are already transparent.
 - **Several signatures in one document:** each placement records its signature. `pdf-stamp::stamp` now takes a list of images, and each `Placement` has an `image` index. Only images actually used are embedded, each once; a page with two different signatures gets two XObject resources. The WASM API takes the images as one concatenated buffer plus a list of lengths, and placements as `[image, page, x, y, width, height]` groups.
@@ -197,7 +197,7 @@ Already done in chunk 1: multiple placements sharing one image, rotation (0/90/1
 - **Dev Samples menu:** it now also lists the test corpus (`corpus/real`, `corpus/generated`) and the stamped corpus outputs from the last `cargo test` (`corpus-stamped`), grouped by folder. It is dev-only; remove it before release.
 - **PWA:** `vite-plugin-pwa` 1.3.0 (2.0.0 was under two weeks old). It precaches 30 files (about 2 MB). pdf.js data is cached on first use, and the licence page is fetched when opened, not precached.
   - **Icons:** `web/public/icon.svg`, rendered to 192 px, 512 px (also used as the maskable icon) and a 180 px Apple touch icon.
-  - **Update prompt:** "A new version is available · Reload · Later" (`web/src/pwa.tsx`). No service worker runs in dev.
+  - **Update prompt:** "A new version is available · Reload · Later" (`web/src/app/pwa.tsx`). No service worker runs in dev.
 - **About** (toolbar): the privacy statement and a link to `licenses.txt`. The file is generated at build time from the runtime npm packages (including the fonts' OFL text) and the Rust crates compiled into the WASM (via `cargo metadata`). Each package is listed once, and each distinct licence text appears once.
 - **Server** (`crates/pdf-flex-server`): axum 0.8.9, tower-http 0.7.1, and tokio 1.53.1 (1.53.2 was too new).
   - Configured with `--addr` and `--dir`, or `PDF_FLEX_ADDR` and `PDF_FLEX_DIR`. It refuses to start without an `index.html`.

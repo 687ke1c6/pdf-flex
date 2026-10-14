@@ -197,6 +197,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .sidebar h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 0.5rem; }
 .sidebar .section-head { display: flex; align-items: baseline; justify-content: space-between; }
 .sidebar .section-head button.icon:hover:not(:disabled) { color: inherit; }
+.sidebar .panel-link { margin: 0 0 0.5rem; font-size: 0.85rem; }
 button.icon:disabled { opacity: 0.35; cursor: default; }
 .sidebar .hint { color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0; }
 button.block { display: flex; width: 100%; margin: 0.25rem 0; }
@@ -378,7 +379,11 @@ button.danger:hover { border-color: var(--danger); background: var(--danger-bg);
 .segmented button:last-child { border-radius: 0 4px 4px 0; }
 .segmented button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); position: relative; }
 .segmented button.bold { font-weight: 700; }
+/* Each font's name is shown in that font, and the three only just fit the panel: a little less padding keeps the margins even. */
+.segmented.fonts button { min-width: 0; padding: 0 0.3rem; }
 .segmented button.italic { font-style: italic; font-family: Georgia, serif; }
+/* Square, so B and I match whatever their letters' widths. */
+.segmented button.bold, .segmented button.italic { flex: none; width: var(--control-h); padding: 0; }
 .segmented svg { width: 1.1rem; height: 1.1rem; display: block; margin: auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .text-row { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.5rem; }
 .text-row .segmented { flex: none; }
