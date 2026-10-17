@@ -1,6 +1,7 @@
 // The left side: the tool rail and the active tool's panel.
 import { createEffect, createSignal, Match, onCleanup, Switch } from "solid-js";
 import { useEditor } from "../document/editor";
+import { PagesPanel } from "../pages/PagesPanel";
 import { SelectionPanel } from "../select/SelectionPanel";
 import { ShapesPanel } from "../shapes/ShapesPanel";
 import { SignaturesPanel } from "../signatures/SignaturesPanel";
@@ -12,6 +13,10 @@ type Panel = PanelTool | "selection";
 
 interface Props {
   onError(message: string): void;
+  onWarning(message: string): void;
+  /** The page in view (1-based), and how to show another: for the Pages panel. */
+  page: number;
+  onGoToPage(page: number): void;
 }
 
 /** Below this width the panel would cover most of the page, so it opens and closes on its own (see below). */
@@ -86,6 +91,9 @@ export function Sidebar(props: Props) {
             </Match>
             <Match when={shown() === "shapes"}>
               <ShapesPanel />
+            </Match>
+            <Match when={shown() === "pages"}>
+              <PagesPanel page={props.page} onGoToPage={props.onGoToPage} onError={props.onError} onWarning={props.onWarning} />
             </Match>
             <Match when={shown() === "selection"}>
               <SelectionPanel />

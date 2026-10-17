@@ -41,13 +41,14 @@ wasm:
     sh crates/pdf-stamp-wasm/licenses.sh
     @ls -l crates/pdf-stamp-wasm/pkg/pdf_stamp_wasm_bg.wasm | awk '{printf "wasm size: %.0f KB\n", $5/1024}'
 
-# Run the WASM build headlessly under Bun and validate its output; check it agrees with pdf.js on the corpus
+# Run the WASM build headlessly under Bun and validate its output; check it agrees with pdf.js on the corpus and stamps assembled pages
 wasm-smoke: fixtures wasm
     bun crates/pdf-stamp-wasm/smoke.ts
     qpdf --check out/wasm-smoke.pdf > /dev/null && echo "qpdf ok: out/wasm-smoke.pdf"
     pdftotext out/wasm-smoke.pdf - | grep -q 'Café – 5 €' && echo "pdftotext ok: out/wasm-smoke.pdf"
     cd web && bun install --frozen-lockfile
     bun crates/pdf-stamp-wasm/corpus.ts 2> /dev/null
+    bun crates/pdf-stamp-wasm/assemble.ts 2> /dev/null
 
 # Chunk 2: serve the bare WASM demo page on http://localhost:5173
 demo: fixtures wasm

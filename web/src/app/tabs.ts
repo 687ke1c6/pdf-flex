@@ -1,21 +1,20 @@
 // Tabs: one per open document (or an empty one, showing the start screen).
-// Each document's session holds everything that belongs to it: the file, its
-// editing state, its draft and autosave, and where it was zoomed and scrolled.
+// Each document's session holds everything that belongs to it: its pages and the
+// PDFs they come from, its editing state, its draft and autosave, and where it
+// was zoomed and scrolled.
 import { createEffect, createRoot, createSignal, on, type Accessor, type Setter } from "solid-js";
 import { createAutosave, type Autosave, type DraftDocument } from "../drafts/autosave";
 import type { Draft } from "../drafts/draftStore";
-import { createDocState, isDirty, snapshotOf, type DocState } from "../document/docState";
+import { createDocState, isDirty, savedKey, snapshotOf, type DocState } from "../document/docState";
+import { usedSources, withoutKeys, type NewSlot, type Source } from "../document/pages";
 import type { Editor } from "../document/editor";
-import type { LoadedPdf } from "../viewer/pdf";
 import type { ScrollPosition } from "../viewer/Viewer";
 
 export interface DocSession {
-  /** The document's identity (SHA-256), as drafts know it. */
+  /** Its draft's id: given when the session is created, or the restored draft's. */
   id: string;
+  /** The name of the file it was started from. */
   name: string;
-  /** The untouched original, which is what gets stamped. */
-  bytes: Uint8Array;
-  pdf: LoadedPdf;
   state: DocState;
   autosave: Autosave;
   zoom: Accessor<number>;
@@ -24,9 +23,9 @@ export interface DocSession {
   setPage: Setter<number>;
   /** Where it was scrolled to when last shown. */
   scroll?: ScrollPosition;
-  /** A draft found when it was opened, offered for restoring. */
-  offer: Accessor<Draft | null>;
-  setOffer: Setter<Draft | null>;
+  /** Found when its file was opened: the newest draft using that file, offered for restoring. */
+  offer: Accessor<Offer | null>;
+  setOffer: Setter<Offer | null>;
   /** Found when it was opened: it can't be edited, it's digitally signed, … */
   warning: Accessor<string>;
   setWarning: Setter<string>;
@@ -34,8 +33,15 @@ export interface DocSession {
   setSaving: Setter<boolean>;
   /** Closing it now would lose work: not downloaded, and not safely in a draft. */
   atRisk(): boolean;
-  /** Stops its autosave and frees its PDF. */
+  /** Stops its autosave and frees its PDFs. */
   dispose(): void;
+}
+
+/** A draft offered when a file is opened. */
+export interface Offer {
+  draft: Draft;
+  /** How many other drafts use the file (they're in Recent). */
+  more: number;
 }
 
 export interface Tab {
@@ -50,6 +56,9 @@ let nextKey = 0;
 export const emptyTab = (): Tab => ({ key: nextKey++, session: null });
 export const pendingTab = (id: string, name: string): Tab => ({ key: nextKey++, session: null, pending: { id, name } });
 export const docTab = (session: DocSession): Tab => ({ key: nextKey++, session });
+
+/** A new draft id. */
+export const newDraftId = () => crypto.randomUUID();
 
 /** Whether a tab has no document (it shows the start screen). */
 export const isEmptyTab = (tab: Tab) => !tab.session && !tab.pending;
@@ -73,36 +82,42 @@ export const tabDocId = (tab: Tab) => tab.session?.id ?? tab.pending?.id;
 export const tabName = (tab: Tab) => tab.session?.name ?? tab.pending?.name ?? "New tab";
 
 /**
- * A session for an opened PDF, with its own reactive scope: its autosave keeps
- * running while other tabs are in front, and `dispose` ends it.
+ * A session for a document: `pages` from `sources` (all already open). With
+ * `draft`, it continues that draft (same id; its PDFs are already stored).
+ * It has its own reactive scope: its autosave keeps running while other tabs
+ * are in front, and `dispose` ends it.
  */
-export function createSession(init: { id: string; name: string; bytes: Uint8Array; pdf: LoadedPdf; draft?: Draft }, editor: Editor): DocSession {
+export function createSession(
+  init: { id: string; name: string; pages: NewSlot[]; sources: Source[]; draft?: Draft },
+  editor: Editor,
+): DocSession {
   return createRoot((disposeRoot) => {
-    const state = createDocState(init.pdf.pages);
+    const state = createDocState(init.pages);
+    for (const source of init.sources) state.sources.set(source.id, source);
     const draftDoc: DraftDocument = {
       id: init.id,
       name: init.name,
-      bytes: init.bytes,
-      pageCount: init.pdf.pages.length,
       createdAt: init.draft?.createdAt ?? Date.now(),
-      fileSaved: !!init.draft,
+      sourcesSaved: new Set(init.draft?.sources.map((s) => s.id)),
     };
     const autosave = createAutosave(draftDoc, {
-      version: () => JSON.stringify(state.placements),
+      version: () => savedKey(state.slots(), state.placements),
       placements: () => snapshotOf(state),
       signatures: () => editor.usedSignatures(state),
+      pages: () => withoutKeys(state.slots()),
+      sources: () => usedSources(state.slots(), state.sources),
     });
     const [zoom, setZoom] = createSignal(1);
     const [page, setPage] = createSignal(1);
-    const [offer, setOffer] = createSignal<Draft | null>(null);
+    const [offer, setOffer] = createSignal<Offer | null>(null);
     const [warning, setWarning] = createSignal("");
     const [saving, setSaving] = createSignal(false);
 
-    // Starting work while a draft is on offer means starting over.
+    // Starting work while a draft is on offer means starting over (the offered draft stays as it is).
     createEffect(
       on(
-        () => JSON.stringify(state.placements),
-        () => offer() && state.placements.length && setOffer(null),
+        () => savedKey(state.slots(), state.placements),
+        () => offer() && isDirty(state) && setOffer(null),
         { defer: true },
       ),
     );
@@ -110,8 +125,6 @@ export function createSession(init: { id: string; name: string; bytes: Uint8Arra
     return {
       id: init.id,
       name: init.name,
-      bytes: init.bytes,
-      pdf: init.pdf,
       state,
       autosave,
       zoom,
@@ -127,7 +140,7 @@ export function createSession(init: { id: string; name: string; bytes: Uint8Arra
       atRisk: () => isDirty(state) && !autosave.upToDate(),
       dispose() {
         disposeRoot();
-        void init.pdf.close();
+        for (const source of state.sources.values()) void source.pdf.close();
       },
     };
   });

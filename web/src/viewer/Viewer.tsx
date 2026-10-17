@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount } from "solid-js";
+import type { DocState } from "../document/docState";
 import { useEditor } from "../document/editor";
 import { PageView } from "./PageView";
-import type { LoadedPdf } from "./pdf";
 import { clampZoom, CSS_PX_PER_PT, fitWidthZoom } from "./zoom";
 
 /** Delay before re-rendering at a new zoom; layout updates immediately. */
@@ -21,7 +21,8 @@ export interface ScrollPosition {
 }
 
 interface Props {
-  pdf: LoadedPdf;
+  /** The document: its pages (slots) and the PDFs they come from. */
+  doc: DocState;
   zoom: number;
   onZoom(zoom: number): void;
   onPageChange(page: number): void;
@@ -45,7 +46,8 @@ export function Viewer(props: Props) {
   const editor = useEditor();
   let scroller!: HTMLDivElement;
   let pagesEl!: HTMLDivElement;
-  const pageEls: HTMLDivElement[] = [];
+  /** The page elements, in document order. Read from the DOM, as pages can be inserted, deleted and moved. */
+  const pageEls = () => Array.from(pagesEl.children) as HTMLDivElement[];
 
   const scale = () => props.zoom * CSS_PX_PER_PT;
   const [renderScale, setRenderScale] = createSignal(scale());
@@ -73,9 +75,10 @@ export function Viewer(props: Props) {
   /** Finds the page under a point in the viewport (scroller-relative CSS px). */
   function anchorAt(viewX: number, viewY: number): Anchor | undefined {
     const y = scroller.scrollTop + viewY;
-    const index = pageEls.findIndex((el) => el.offsetTop + el.offsetHeight + PAGE_PADDING / 2 > y);
+    const els = pageEls();
+    const index = els.findIndex((el) => el.offsetTop + el.offsetHeight + PAGE_PADDING / 2 > y);
     if (index < 0) return undefined;
-    const el = pageEls[index];
+    const el = els[index];
     return {
       index,
       fy: (y - el.offsetTop) / el.offsetHeight,
@@ -92,8 +95,8 @@ export function Viewer(props: Props) {
     on(
       scale,
       () => {
-        if (!anchor) return;
-        const el = pageEls[anchor.index];
+        const el = anchor && pageEls()[anchor.index];
+        if (!anchor || !el) return;
         scroller.scrollTop = el.offsetTop + anchor.fy * el.offsetHeight - anchor.viewY;
         scroller.scrollLeft = anchor.fx * pagesEl.offsetWidth - anchor.viewX;
       },
@@ -203,7 +206,7 @@ export function Viewer(props: Props) {
 
   function fitWidth() {
     anchor = centerAnchor();
-    const widest = Math.max(...props.pdf.pages.map((p) => p.width));
+    const widest = Math.max(...props.doc.slots().map((p) => p.width));
     props.onZoom(fitWidthZoom(scroller.clientWidth - 2 * PAGE_PADDING, widest));
   }
 
@@ -221,7 +224,14 @@ export function Viewer(props: Props) {
       },
       { root: scroller, rootMargin: "100% 0px" },
     );
-    pageEls.forEach((el) => observer.observe(el));
+    // Pages come and go: observe the ones there now, from scratch, so positions are fresh.
+    createEffect(
+      on(props.doc.slots, () => {
+        observer.disconnect();
+        setActive(new Set<number>());
+        pageEls().forEach((el) => observer.observe(el));
+      }),
+    );
 
     // Re-render when devicePixelRatio changes, e.g. the window moves to another monitor.
     let media: MediaQueryList | undefined;
@@ -267,7 +277,7 @@ export function Viewer(props: Props) {
 
     props.api({
       goToPage(page) {
-        pageEls[page - 1]?.scrollIntoView({ block: "start" });
+        pageEls()[page - 1]?.scrollIntoView({ block: "start" });
       },
       fitWidth,
     });
@@ -285,17 +295,18 @@ export function Viewer(props: Props) {
   return (
     <div class="scroller" classList={{ "pan-ready": panReady(), panning: panning() }} ref={scroller} onScroll={onScroll}>
       <div class="pages" ref={pagesEl}>
-        <For each={props.pdf.pages}>
-          {(size, i) => (
+        {/* Keyed by slot, so a page that moves keeps its element and canvas. */}
+        <For each={props.doc.slots()}>
+          {(slot, i) => (
             <PageView
-              doc={props.pdf.doc}
+              doc={props.doc.sources.get(slot.source)!.pdf.doc}
+              sourcePage={slot.index + 1}
               pageNumber={i() + 1}
-              size={size}
+              size={slot}
               scale={scale()}
               renderScale={renderScale()}
               active={active().has(i())}
               dprTick={dprTick()}
-              ref={(el) => (pageEls[i()] = el)}
             />
           )}
         </For>

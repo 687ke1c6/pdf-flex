@@ -3,7 +3,7 @@
 // rail on the far left.
 import { createEffect, createSignal, For, on, onCleanup, onMount, type JSX } from "solid-js";
 
-export type PanelTool = "signatures" | "text" | "shapes";
+export type PanelTool = "signatures" | "text" | "shapes" | "pages";
 export type Tool = "select" | "hand" | PanelTool;
 
 interface ToolInfo {
@@ -32,9 +32,10 @@ export const TOOL_INFO: Record<Tool, ToolInfo> = {
   signatures: { label: "Signatures", key: "S", icon: icon("M3 17c3-1 4-8 6-8s0 7 2 7 3-4 4-4 1 3 3 3 2-1 3-1M3 21h18") },
   text: { label: "Text", key: "T", icon: icon("M5 6V4h14v2M12 4v16M9 20h6") },
   shapes: { label: "Shapes", key: "R", icon: icon("M3 3h9v9H3zM17.5 11a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9M6 21l5-7") },
+  pages: { label: "Pages", key: "P", icon: icon("M9 3h8l3 3v11H9zM17 3v3h3M6 7v14h10") },
 };
 
-export const PANEL_TOOLS: PanelTool[] = ["signatures", "text", "shapes"];
+export const PANEL_TOOLS: PanelTool[] = ["signatures", "text", "shapes", "pages"];
 export const isPanelTool = (tool: Tool): tool is PanelTool => (PANEL_TOOLS as Tool[]).includes(tool);
 
 /** The tool for a shortcut key, if any. */

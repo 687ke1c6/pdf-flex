@@ -3,7 +3,7 @@
 import { createSignal, type Accessor, type Setter } from "solid-js";
 import { createStore, unwrap, type SetStoreFunction } from "solid-js/store";
 import { createHistory, type History } from "./history";
-import type { PageSize } from "../viewer/pdf";
+import { singleSource, type NewSlot, type PagesState, type Slot, type Source } from "./pages";
 import type { Placement } from "./placement";
 
 /** An in-place text edit in progress. It becomes one undo step when it ends. */
@@ -15,8 +15,8 @@ export interface EditSession {
 }
 
 /**
- * One document's editing state: what's placed on it, what's selected, the text
- * being edited, its undo history, its page sizes, and what was last downloaded.
+ * One document's editing state: its pages, what's placed on them, what's selected,
+ * the text being edited, its undo history, and what was last downloaded.
  * Each open document (tab) has its own; the editor works on the active one.
  */
 export interface DocState {
@@ -30,23 +30,32 @@ export interface DocState {
   setEditing: Setter<string | null>;
   /** The in-place edit in progress, if any. */
   session: EditSession | undefined;
-  pages: PageSize[];
+  /** The page list (see pages.ts). Its sizes are what placements are kept within. */
+  slots: Accessor<Slot[]>;
+  setSlots: Setter<Slot[]>;
+  /**
+   * The PDFs the slots come from, by id. Only ever added to (an undo can bring a
+   * page back), and added before any slot refers to them; closed with the document.
+   */
+  sources: Map<string, Source>;
   nextPlacementId: number;
-  history: History<Placement[]>;
+  nextSlotKey: number;
+  history: History<PagesState>;
   /** Changes whenever the history does, so canUndo/canRedo are reactive. */
   historyVersion: Accessor<number>;
-  /** The placements as last downloaded (or as opened), serialised. */
+  /** The pages and placements as last downloaded (or as opened), serialised by `savedKey`. */
   savedState: Accessor<string>;
   setSavedState: Setter<string>;
 }
 
-/** A fresh document state for a PDF with these pages. */
-export function createDocState(pages: PageSize[]): DocState {
+/** A fresh document state with these pages (their sources are added to `sources` by the caller). */
+export function createDocState(pages: NewSlot[] = []): DocState {
   const [placements, setPlacements] = createStore<Placement[]>([]);
+  const [slots, setSlots] = createSignal<Slot[]>(pages.map((p, i) => ({ ...p, key: `s${i}` })));
   const [selection, setSelection] = createSignal<string[]>([]);
   const [editing, setEditing] = createSignal<string | null>(null);
   const [historyVersion, setHistoryVersion] = createSignal(0);
-  const [savedState, setSavedState] = createSignal("[]");
+  const [savedState, setSavedState] = createSignal(savedKey(slots(), []));
   return {
     placements,
     setPlacements,
@@ -55,9 +64,12 @@ export function createDocState(pages: PageSize[]): DocState {
     editing,
     setEditing,
     session: undefined,
-    pages,
+    slots,
+    setSlots,
+    sources: new Map(),
     nextPlacementId: 0,
-    history: createHistory<Placement[]>(() => setHistoryVersion((v) => v + 1)),
+    nextSlotKey: pages.length,
+    history: createHistory<PagesState>(() => setHistoryVersion((v) => v + 1)),
     historyVersion,
     savedState,
     setSavedState,
@@ -67,5 +79,15 @@ export function createDocState(pages: PageSize[]): DocState {
 /** A plain copy of a document's placements. */
 export const snapshotOf = (d: DocState): Placement[] => unwrap(d.placements).map((p) => ({ ...p }));
 
-/** Whether a document has placements that haven't been downloaded. */
-export const isDirty = (d: DocState) => JSON.stringify(d.placements) !== d.savedState();
+/** A plain copy of a document's pages and placements: an undo step. */
+export const stateOf = (d: DocState): PagesState => ({ slots: d.slots(), placements: snapshotOf(d) });
+
+/** What `isDirty` compares: the pages (by what they show, not their keys) and the placements. */
+export const savedKey = (slots: Slot[], placements: readonly Placement[]) =>
+  JSON.stringify([slots.map((s) => [s.source, s.index]), placements]);
+
+/** Whether there's anything to download: placed items, or pages that aren't just one PDF's as it is. */
+export const hasChanges = (d: DocState) => d.placements.length > 0 || !singleSource(d.slots(), d.sources);
+
+/** Whether a document has changes (pages or placements) that haven't been downloaded. */
+export const isDirty = (d: DocState) => savedKey(d.slots(), d.placements) !== d.savedState();

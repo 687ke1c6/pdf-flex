@@ -66,6 +66,8 @@ export function PageOverlay(props: Props) {
         boxSelect(e, layer, additive);
         return;
       case "hand":
+      // Page actions live in the Pages panel; a click on the page does nothing.
+      case "pages":
         return;
     }
     // With a modifier held, a click is about the selection: it leaves it alone.

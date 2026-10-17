@@ -3,12 +3,17 @@ import { documentId } from "./common/db";
 import { download } from "./common/download";
 import { ConfirmHost, askConfirm } from "./common/ConfirmDialog";
 import { DownloadButton, DownloadDialog } from "./download/DownloadDialog";
-import { draftStore, formatSavedAt, usablePlacements, type Draft } from "./drafts/draftStore";
+import { describe, draftStore, formatSavedAt, summarize, usablePlacements, type Draft } from "./drafts/draftStore";
 import { createDocState, SIGNATURE_DRAG_TYPE, useEditor } from "./document/editor";
+import { hasChanges as docHasChanges } from "./document/docState";
+import { pagesOf, singleSource, type Source } from "./document/pages";
+import { isBlankSource } from "./pages/blank";
 import { openPdf } from "./viewer/pdf";
 import { Sidebar } from "./app/Sidebar";
 import { QuickBar, toolForKey } from "./app/ToolRail";
 import { StatusBar } from "./app/StatusBar";
+import { pagesPdf } from "./download/assemble";
+import { openDraftSources } from "./pages/draftPages";
 import { inspectPdf, sameLayout, stampPdf } from "./download/stamper";
 import { clampZoom, stepZoom } from "./viewer/zoom";
 import { UpdatePrompt } from "./app/pwa";
@@ -18,6 +23,7 @@ import { RecentDrafts } from "./drafts/RecentDrafts";
 import { TabBar } from "./app/TabBar";
 import {
   createSession,
+  newDraftId,
   arrangeTabs,
   docTab,
   emptyTab,
@@ -82,90 +88,170 @@ export function App() {
   /** Replaces one tab, keeping its place. */
   const replaceTab = (key: number, next: Tab) => setTabs((list) => list.map((t) => (t.key === key ? next : t)));
 
-  async function restore(session: DocSession, draft: Draft) {
-    session.setOffer(null);
-    await editor.restoreDraft(usablePlacements(draft), draft.signatures, session.state);
-  }
-
-  /** In the background: warns now, not at save time, if this PDF can't be edited. */
+  /** In the background: warns now, not at save time, if a PDF of the document can't be edited. */
   function inspect(session: DocSession) {
-    inspectPdf(session.bytes).then(
-      ({ pages, digitallySigned }) => {
-        const warnings = [];
-        if (digitallySigned)
-          warnings.push("This PDF is digitally signed. Saving changes to it will make the existing digital signature invalid.");
-        if (!sameLayout(session.pdf.pages, pages))
-          warnings.push("This PDF's page layout is unusual, so items may not land exactly where you place them. Check the downloaded file.");
-        session.setWarning(warnings.join(" "));
-      },
-      (err) => session.setWarning(`You can view this PDF, but not edit it. ${err instanceof Error ? err.message : err}`),
-    );
+    const sources = [...session.state.sources.values()].filter((source) => !isBlankSource(source.id));
+    const about = (source: { name: string }) => (sources.length === 1 ? "This PDF" : `“${source.name}”`);
+    void Promise.all(
+      sources.map(({ bytes, pdf, ...source }) =>
+        inspectPdf(bytes).then(
+          ({ pages, digitallySigned }) => {
+            const warnings = [];
+            if (digitallySigned)
+              warnings.push(`${about(source)} is digitally signed. Saving changes to it will make the existing digital signature invalid.`);
+            if (!sameLayout(pdf.pages, pages))
+              warnings.push(`${about(source)} has an unusual page layout, so items may not land exactly where you place them. Check the downloaded file.`);
+            return warnings.join(" ");
+          },
+          (err) =>
+            sources.length === 1
+              ? `You can view this PDF, but not edit it. ${err instanceof Error ? err.message : err}`
+              : `“${source.name}” can't be edited. ${err instanceof Error ? err.message : err}`,
+        ),
+      ),
+    ).then((warnings) => session.setWarning(warnings.filter(Boolean).join(" ")));
   }
 
   /**
-   * Makes a session for a PDF. If it has a draft, that's offered for restoring,
-   * or restored straight away with `resume` (picked from the drafts list, or a
-   * tab coming back after a reload).
+   * A session for a PDF just opened: a new draft. It's offered the newest draft
+   * that uses this file (the banner offers to switch to it if it's open in a tab).
    */
-  async function sessionFor(id: string, name: string, bytes: Uint8Array, resume: boolean): Promise<DocSession> {
-    const pdf = await openPdf(bytes);
-    const draft = await draftStore.get(id).catch(() => undefined);
-    const session = createSession({ id, name: draft?.name ?? name, bytes, pdf, draft }, editor);
-    if (draft?.placements.length) {
-      if (resume) await restore(session, draft);
-      else session.setOffer(draft);
-    }
+  async function fileSession(name: string, bytes: Uint8Array, hash: string): Promise<DocSession> {
+    const source = { id: hash, name, bytes, pdf: await openPdf(bytes) };
+    const session = createSession({ id: newDraftId(), name, pages: pagesOf(source), sources: [source] }, editor);
+    const [newest, ...others] = await draftStore.matching(hash).catch(() => []);
+    if (newest) session.setOffer({ draft: newest, more: others.length });
+    inspect(session);
+    return session;
+  }
+
+  /** The tab a draft is open in, if it is. */
+  const tabOf = (draftId: string) => tabs().find((t) => tabDocId(t) === draftId);
+
+  /** A session continuing a draft: its PDFs from storage, then its pages and what's placed on them. */
+  async function draftSession(draft: Draft): Promise<DocSession> {
+    const sources = new Map<string, Source>();
+    const missing = await openDraftSources(draft, sources, (id) => draftStore.file(draft.id, id));
+    if (!sources.size) throw new Error("its saved copies are no longer in this browser");
+    if (missing.length) setError(`Pages from ${missing.join(", ")} couldn't be restored, so they and what was on them were left out.`);
+    // Before its own pages go back: every page of its first PDF, which is what drafts without a page list are about.
+    const first = draft.sources.map((s) => sources.get(s.id)).find((s) => s !== undefined);
+    const session = createSession({ id: draft.id, name: draft.name, pages: first ? pagesOf(first) : [], sources: [...sources.values()], draft }, editor);
+    await editor.restoreDraft(usablePlacements(draft), draft.signatures, session.state, draft.pages);
     inspect(session);
     return session;
   }
 
   /**
-   * Opens a PDF in a tab: the empty tab in front, or a new one after it. A
-   * document that's already open just comes to the front.
+   * Shows a new session in a tab: the empty tab in front, or a new one after it.
+   * With tabs off, it takes the place of the document in front (whose draft
+   * stays), asking first if that one has work not yet in a draft.
    */
-  async function open(name: string, bytes: Uint8Array, resume = false) {
+  async function place(name: string, make: () => Promise<DocSession>) {
+    const here = activeTab();
+    const replacing = !tabsMode() && here && !isEmptyTab(here) ? here : undefined;
+    const old = replacing?.session;
+    if (
+      old?.atRisk() &&
+      !(await askConfirm({
+        title: "Replace document?",
+        message: `Your changes to ${old.name} haven't been downloaded or saved as a draft. Open ${name} instead?`,
+        confirm: `Open ${name}`,
+        danger: true,
+      }))
+    )
+      return;
+    await old?.autosave.flush();
+    const session = await make();
+    const tab = docTab(session);
+    // The tab list and the tab in front change together.
+    batch(() => {
+      if (here && (isEmptyTab(here) || replacing)) replaceTab(here.key, tab);
+      else
+        setTabs((list) => {
+          const at = list.findIndex((t) => t.key === activeKey());
+          return [...list.slice(0, at + 1), tab, ...list.slice(at + 1)];
+        });
+      setActiveKey(tab.key);
+    });
+    old?.dispose();
+  }
+
+  /**
+   * Opens a PDF in a new document (and tab). If a tab already has this file
+   * untouched (its pages as they are, nothing placed), that comes to the front instead.
+   */
+  async function open(name: string, bytes: Uint8Array) {
     setError("");
     setLoading(true);
     try {
-      const id = await documentId(bytes);
-      const existing = tabs().find((t) => tabDocId(t) === id);
-      if (existing) {
-        await show(existing.key);
-        return;
-      }
-      // With tabs off, the new document takes the place of the one in front (its draft stays).
-      const here = activeTab();
-      const replacing = !tabsMode() && here && !isEmptyTab(here) ? here : undefined;
-      const old = replacing?.session;
-      if (
-        old?.atRisk() &&
-        !(await askConfirm({
-          title: "Replace document?",
-          message: `Your changes to ${old.name} haven't been downloaded or saved as a draft. Open ${name} instead?`,
-          confirm: `Open ${name}`,
-          danger: true,
-        }))
-      )
-        return;
-      await old?.autosave.flush();
-      const session = await sessionFor(id, name, bytes, resume);
-      const tab = docTab(session);
-      // The tab list and the tab in front change together.
-      batch(() => {
-        if (here && (isEmptyTab(here) || replacing)) replaceTab(here.key, tab);
-        else
-          setTabs((list) => {
-            const at = list.findIndex((t) => t.key === activeKey());
-            return [...list.slice(0, at + 1), tab, ...list.slice(at + 1)];
-          });
-        setActiveKey(tab.key);
+      const hash = await documentId(bytes);
+      const untouched = tabs().find((t) => {
+        const state = t.session?.state;
+        return state && !state.placements.length && singleSource(state.slots(), state.sources)?.id === hash;
       });
-      old?.dispose();
+      if (untouched) return await show(untouched.key);
+      await place(name, () => fileSession(name, bytes, hash));
     } catch (err) {
       setError(`Couldn't open ${name}: ${err instanceof Error ? err.message : err}`);
     } finally {
       setLoading(false);
     }
+  }
+
+  /** Opens a draft in a tab (from Recent); if it's open already, that tab comes to the front. */
+  async function openDraft(id: string, name: string) {
+    const existing = tabs().find((t) => tabDocId(t) === id);
+    if (existing) return show(existing.key);
+    setError("");
+    setLoading(true);
+    try {
+      const draft = await draftStore.get(id);
+      if (!draft) throw new Error("its draft is no longer in this browser");
+      await place(name, () => draftSession(draft));
+    } catch (err) {
+      setError(`Couldn't reopen ${name}: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /** Restore, on the offer: the offered draft takes the fresh session's place in its tab. */
+  async function restore(session: DocSession, draft: Draft) {
+    session.setOffer(null);
+    const key = tabs().find((t) => t.session === session)?.key;
+    if (key === undefined) return;
+    // Opened from Recent in another tab since it was offered.
+    const elsewhere = tabOf(draft.id);
+    if (elsewhere) return show(elsewhere.key);
+    setLoading(true);
+    try {
+      const next = await draftSession(draft);
+      if (tabs().some((t) => t.key === key && t.session === session)) {
+        replaceTab(key, { key, session: next });
+        session.dispose();
+      } else next.dispose();
+    } catch (err) {
+      setError(`Couldn't restore ${draft.name}: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /**
+   * Switch to it, on the offer: goes to the tab the offered draft is open in, and
+   * closes this one. It's untouched (the offer goes at the first change), so nothing is lost.
+   */
+  async function switchTo(session: DocSession, draftId: string) {
+    const target = tabOf(draftId);
+    const here = tabs().find((t) => t.session === session);
+    if (!target) return;
+    batch(() => {
+      if (here) setTabs((list) => list.filter((t) => t.key !== here.key));
+      setActiveKey(target.key);
+    });
+    session.dispose();
+    await show(target.key);
   }
 
   /** Brings a tab to the front, loading its document if it came back after a reload. */
@@ -176,9 +262,9 @@ export function App() {
     const { id, name } = tab.pending;
     setLoading(true);
     try {
-      const bytes = await draftStore.pdf(id).catch(() => undefined);
-      if (!bytes) throw new Error("its saved copy is no longer in this browser");
-      const session = await sessionFor(id, name, bytes, true);
+      const draft = await draftStore.get(id).catch(() => undefined);
+      if (!draft) throw new Error("its draft is no longer in this browser");
+      const session = await draftSession(draft);
       // The tab may have been closed while loading.
       if (tabs().some((t) => t.key === key)) replaceTab(key, { key, session });
       else session.dispose();
@@ -269,14 +355,6 @@ export function App() {
     return true;
   }
 
-  async function openDraft(id: string, name: string) {
-    const existing = tabs().find((t) => tabDocId(t) === id);
-    if (existing) return show(existing.key);
-    const bytes = await draftStore.pdf(id).catch(() => undefined);
-    if (bytes) await open(name, bytes, true);
-    else setError(`The saved copy of ${name} couldn't be read. Open the file itself to start again.`);
-  }
-
   const zoomTo = (z: number) => active()?.setZoom(clampZoom(z));
 
   // Drag and drop anywhere in the window.
@@ -288,7 +366,9 @@ export function App() {
   };
   // Capture phase: runs even if a drop target (e.g. a page) stops propagation.
   const endDrag = () => setDragging(false);
+  // A drop target that takes files itself (the Pages panel) prevents the default first; then it's not "drop to open".
   function onDragOver(e: DragEvent) {
+    if (e.defaultPrevented) return setDragging(false);
     if (!isFileDrag(e)) return;
     e.preventDefault();
     setDragging(true);
@@ -298,7 +378,7 @@ export function App() {
     if (!e.relatedTarget) setDragging(false);
   }
   async function onDrop(e: DragEvent) {
-    if (!isFileDrag(e)) return;
+    if (e.defaultPrevented || !isFileDrag(e)) return;
     e.preventDefault();
     setDragging(false);
     const pdfs = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
@@ -306,16 +386,19 @@ export function App() {
     await openFiles(pdfs);
   }
 
+  /** Whether there's anything to download: placed items, or changed pages. */
+  const hasChanges = (s: DocSession | null | undefined) => !!s && docHasChanges(s.state);
+
   /** Asks for a file name, then downloads (see `save`). */
   function startDownload() {
     editor.endEdit();
-    if (active()?.state.placements.length) setNaming(true);
+    if (hasChanges(active())) setNaming(true);
   }
 
   async function save(filename: string) {
     const s = active();
     editor.endEdit();
-    if (!s || !s.state.placements.length) return;
+    if (!s || !hasChanges(s)) return;
     setError("");
     s.setSaving(true);
     try {
@@ -325,7 +408,8 @@ export function App() {
         const sig = editor.signature(p.signatureId);
         if (sig) images.set(p.signatureId, new Uint8Array(await sig.png.arrayBuffer()));
       }
-      download(await stampPdf(s.bytes, s.state.placements, images), filename);
+      const pdf = await pagesPdf(s.state);
+      download(await stampPdf(pdf, s.state.placements, images), filename);
       editor.markSaved(s.state);
     } catch (err) {
       setError(`Couldn't save: ${err instanceof Error ? err.message : err}`);
@@ -532,7 +616,7 @@ export function App() {
                 {(s) => {
                   const base = () => s().name.replace(/\.pdf$/i, "");
                   const ext = () => s().name.slice(base().length);
-                  const pages = () => s().pdf.pages.length;
+                  const pages = () => s().state.slots().length;
                   return (
                     <div class="doc-title" title={s().name}>
                       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -577,7 +661,7 @@ export function App() {
                 <DownloadButton
                   title="Download a copy with your changes"
                   label={s().saving() ? "Saving…" : "Download PDF"}
-                  disabled={!editor.placements.length || s().saving()}
+                  disabled={!hasChanges(s()) || s().saving()}
                   onClick={startDownload}
                 />
               </span>
@@ -616,25 +700,54 @@ export function App() {
       </Show>
 
       <Show when={active()?.offer()}>
-        {(draft) => (
-          <div class="restore" role="status">
-            <span>
-              You have unsaved work on this document from {formatSavedAt(draft().savedAt)} ({draft().placements.length}{" "}
-              {draft().placements.length === 1 ? "item" : "items"}).
-            </span>
-            <button class="primary" onClick={() => active() && restore(active()!, draft())}>
-              Restore
-            </button>
-            <button title="Your next change replaces the saved work" onClick={() => active()?.setOffer(null)}>
-              Start over
-            </button>
-          </div>
-        )}
+        {(offer) => {
+          const draft = () => offer().draft;
+          // Open in another tab (now, or since it was offered): switch to it rather than open it twice.
+          const elsewhere = () => tabOf(draft().id);
+          const more = () => (offer().more ? ` There ${offer().more === 1 ? "is 1 more" : `are ${offer().more} more`} in Recent.` : "");
+          return (
+            <div class="restore" role="status">
+              <Show
+                when={!elsewhere()}
+                fallback={
+                  <>
+                    <span>You're working with this file in another tab ({describe(summarize(draft()))}).{more()}</span>
+                    <button
+                      class="primary"
+                      title="Go to that tab and close this one"
+                      onClick={() => active() && void switchTo(active()!, draft().id)}
+                    >
+                      Switch to it
+                    </button>
+                    <button title="Start fresh from this file here" onClick={() => active()?.setOffer(null)}>
+                      Start over
+                    </button>
+                  </>
+                }
+              >
+                <span>
+                  You have work using this file from {formatSavedAt(draft().savedAt)} ({describe(summarize(draft()))}).{more()}
+                </span>
+                <button class="primary" onClick={() => active() && restore(active()!, draft())}>
+                  Restore
+                </button>
+                <button title="Start fresh from this file. The saved work stays, and you can open it from Recent" onClick={() => active()?.setOffer(null)}>
+                  Start over
+                </button>
+              </Show>
+            </div>
+          );
+        }}
       </Show>
 
       <div class="body">
         <Show when={active()}>
-          <Sidebar onError={setError} />
+          <Sidebar
+            onError={setError}
+            onWarning={(message) => active()?.setWarning((w) => [w, message].filter(Boolean).join(" "))}
+            page={active()?.page() ?? 1}
+            onGoToPage={(n) => viewer?.goToPage(n)}
+          />
         </Show>
         <main class="main">
           <Show
@@ -665,7 +778,7 @@ export function App() {
           >
             {(s) => (
               <Viewer
-                pdf={s.pdf}
+                doc={s.state}
                 zoom={s.zoom()}
                 onZoom={(z) => s.setZoom(clampZoom(z))}
                 onPageChange={s.setPage}
@@ -702,11 +815,11 @@ export function App() {
                   <input
                     type="number"
                     min="1"
-                    max={s().pdf.pages.length}
+                    max={s().state.slots().length}
                     value={s().page()}
                     onChange={(e) => viewer?.goToPage(Number(e.currentTarget.value))}
                   />
-                  / {s().pdf.pages.length}
+                  / {s().state.slots().length}
                 </label>
                 <span class="zoom">
                   <button title="Zoom out (Ctrl −)" aria-label="Zoom out" onClick={() => zoomTo(stepZoom(s().zoom(), -1))}>

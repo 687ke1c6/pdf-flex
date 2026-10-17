@@ -1,6 +1,7 @@
 // Autosave: keeps a draft of the open document in this browser as you work.
 import { batch, createEffect, createMemo, createSignal, on, untrack } from "solid-js";
 import { DRAFT_VERSION, draftStore } from "./draftStore";
+import type { NewSlot } from "../document/pages";
 import type { Placement } from "../document/placement";
 import type { StoredSignature } from "../signatures/signatureStore";
 
@@ -34,13 +35,12 @@ export function setDraftsEnabled(on: boolean) {
 
 /** The open document, as far as drafts are concerned. */
 export interface DraftDocument {
+  /** The draft's id. */
   id: string;
   name: string;
-  bytes: Uint8Array;
-  pageCount: number;
   createdAt: number;
-  /** Its PDF is already in storage (it only needs writing once). */
-  fileSaved: boolean;
+  /** The PDFs it uses that are already in storage, by id (each only needs writing once). */
+  sourcesSaved?: Set<string>;
 }
 
 export type AutosaveState =
@@ -50,10 +50,14 @@ export type AutosaveState =
   | { status: "error"; message: string };
 
 interface Source {
-  /** The placements, serialised: changes to it are what get saved. Tracked. */
+  /** The pages and placements, serialised: changes to it are what get saved. Tracked. */
   version(): string;
   placements(): Placement[];
   signatures(): StoredSignature[];
+  /** The page list. */
+  pages?(): NewSlot[];
+  /** The PDFs the pages come from (blank pages aside). */
+  sources?(): { id: string; name: string; bytes: Uint8Array }[];
 }
 
 /** Keeps `doc`'s draft up to date. Each open document has its own. */
@@ -106,6 +110,11 @@ export function createAutosave(doc: DraftDocument, source: Source, store: Pick<t
   async function write() {
     const version = source.version();
     const now = Date.now();
+    const pages = source.pages?.();
+    const sources = source.sources?.() ?? [];
+    const stored = (doc.sourcesSaved ??= new Set());
+    // Stored before, but no page uses them now (deleted, or undone): removed, and written again if they come back.
+    const unused = [...stored].filter((id) => !sources.some((s) => s.id === id));
     setSaving(true);
     try {
       await store.save(
@@ -113,16 +122,20 @@ export function createAutosave(doc: DraftDocument, source: Source, store: Pick<t
           id: doc.id,
           version: DRAFT_VERSION,
           name: doc.name,
-          pageCount: doc.pageCount,
-          size: doc.bytes.length,
+          pageCount: pages?.length ?? 0,
+          size: sources.reduce((sum, s) => sum + s.bytes.length, 0),
           placements: source.placements(),
           signatures: source.signatures(),
+          pages,
+          sources: sources.map(({ id, name }) => ({ id, name })),
           createdAt: doc.createdAt,
           savedAt: now,
         },
-        doc.fileSaved ? undefined : doc.bytes,
+        sources.filter((s) => !stored.has(s.id)),
+        unused,
       );
-      doc.fileSaved = true;
+      for (const s of sources) stored.add(s.id);
+      for (const id of unused) stored.delete(id);
       failed = undefined;
       batch(() => {
         setSaved(version);
