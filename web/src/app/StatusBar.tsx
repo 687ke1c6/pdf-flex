@@ -91,6 +91,8 @@ export function StatusBar(props: Props) {
         return "Click on a page to add text";
       case "shapes":
         return DRAW_HINTS[editor.shapeTool()];
+      case "pages":
+        return "Experimental: page tools are coming to the panel";
     }
   };
 

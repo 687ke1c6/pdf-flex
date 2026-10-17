@@ -2,8 +2,9 @@
 // Select and Hand have no settings; the others have a panel, opened from the
 // rail on the far left.
 import { createEffect, createSignal, For, on, onCleanup, onMount, type JSX } from "solid-js";
+import { flag } from "../common/flags";
 
-export type PanelTool = "signatures" | "text" | "shapes";
+export type PanelTool = "signatures" | "text" | "shapes" | "pages";
 export type Tool = "select" | "hand" | PanelTool;
 
 interface ToolInfo {
@@ -32,14 +33,18 @@ export const TOOL_INFO: Record<Tool, ToolInfo> = {
   signatures: { label: "Signatures", key: "S", icon: icon("M3 17c3-1 4-8 6-8s0 7 2 7 3-4 4-4 1 3 3 3 2-1 3-1M3 21h18") },
   text: { label: "Text", key: "T", icon: icon("M5 6V4h14v2M12 4v16M9 20h6") },
   shapes: { label: "Shapes", key: "R", icon: icon("M3 3h9v9H3zM17.5 11a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9M6 21l5-7") },
+  pages: { label: "Pages", key: "P", icon: icon("M9 3h8l3 3v11H9zM17 3v3h3M6 7v14h10") },
 };
 
-export const PANEL_TOOLS: PanelTool[] = ["signatures", "text", "shapes"];
-export const isPanelTool = (tool: Tool): tool is PanelTool => (PANEL_TOOLS as Tool[]).includes(tool);
+/** The panel tools in use, in rail order. Pages is behind its feature flag. Reactive. */
+export const panelTools = (): PanelTool[] => (flag("pages") ? ["signatures", "text", "shapes", "pages"] : ["signatures", "text", "shapes"]);
+export const isPanelTool = (tool: Tool): tool is PanelTool => (panelTools() as Tool[]).includes(tool);
+/** The tools in use: Select, Hand and the panel tools. Reactive. */
+const tools = (): Tool[] => ["select", "hand", ...panelTools()];
+export const isToolEnabled = (tool: Tool) => tools().includes(tool);
 
 /** The tool for a shortcut key, if any. */
-export const toolForKey = (key: string): Tool | undefined =>
-  (Object.keys(TOOL_INFO) as Tool[]).find((t) => TOOL_INFO[t].key === key.toUpperCase());
+export const toolForKey = (key: string): Tool | undefined => tools().find((t) => TOOL_INFO[t].key === key.toUpperCase());
 
 const TOOL_KEY = "pdf-flex:tool";
 const LAST_PANEL_TOOL_KEY = "pdf-flex:last-tool";
@@ -63,10 +68,10 @@ function store(key: string, value: string) {
 }
 
 /** The tool in use last time; Select the first time. */
-export const savedTool = () => load(TOOL_KEY, Object.keys(TOOL_INFO) as Tool[], "select");
+export const savedTool = () => load(TOOL_KEY, tools(), "select");
 export const saveTool = (tool: Tool) => store(TOOL_KEY, tool);
 /** The panel tool used most recently: the quick bar's third button. */
-export const savedPanelTool = () => load(LAST_PANEL_TOOL_KEY, PANEL_TOOLS, "signatures");
+export const savedPanelTool = () => load(LAST_PANEL_TOOL_KEY, panelTools(), "signatures");
 export const savePanelTool = (tool: PanelTool) => store(LAST_PANEL_TOOL_KEY, tool);
 
 /** A tool's tooltip: its name and shortcut. */
@@ -103,7 +108,7 @@ export function ToolRail(props: Props) {
         )}
       </For>
       <span class="rail-basic separator" aria-hidden="true" />
-      <For each={PANEL_TOOLS}>
+      <For each={panelTools()}>
         {(tool) => (
           <button
             classList={{ active: props.active === tool }}

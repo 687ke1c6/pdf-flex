@@ -1,5 +1,5 @@
 // Editing state: the active tool, the signature library, what's placed where, what's selected, and text being edited.
-import { createContext, createSignal, useContext, type ParentProps } from "solid-js";
+import { createContext, createEffect, createSignal, useContext, type ParentProps } from "solid-js";
 import { createStore, unwrap, type SetStoreFunction } from "solid-js/store";
 import { createDocState, isDirty, snapshotOf, type DocState } from "./docState";
 import type { PageSize } from "../viewer/pdf";
@@ -18,7 +18,7 @@ import {
 } from "./placement";
 import { alignedBox, alignTarget, limitGroupMove, type AlignEdge, type GroupBox } from "../select/arrange";
 import { DEFAULT_SHAPE_STYLE, lineBox, lineEnds, SHAPE_KINDS, type ShapeKind, type ShapeStyle } from "../shapes/shapes";
-import { isPanelTool, savedPanelTool, savePanelTool, savedTool, saveTool, type PanelTool, type Tool } from "../app/ToolRail";
+import { isPanelTool, isToolEnabled, savedPanelTool, savePanelTool, savedTool, saveTool, type PanelTool, type Tool } from "../app/ToolRail";
 import { LINE_HEIGHT, opposite, relaidOut, resizedTextSize, type TextStyle } from "../text/textLayout";
 import {
   exportSignatures,
@@ -110,6 +110,11 @@ function createEditor() {
   const deselect = (id: string) => setSelection((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : ids));
   const [tool, setToolSignal] = createSignal<Tool>(savedTool());
   const [lastPanelTool, setLastPanelTool] = createSignal<PanelTool>(isPanelTool(tool()) ? (tool() as PanelTool) : savedPanelTool());
+  // A tool whose feature flag was turned off in Settings goes back to the defaults.
+  createEffect(() => {
+    if (!isToolEnabled(tool())) setToolSignal("select");
+    if (!isToolEnabled(lastPanelTool())) setLastPanelTool("signatures");
+  });
   const [creatingSignature, setCreatingSignature] = createSignal(false);
   const [textStyle, setTextStyleSignal] = createSignal<TextStyle>(load(TEXT_STYLE_KEY, DEFAULT_TEXT_STYLE));
   const [shapeStyle, setShapeStyleSignal] = createSignal<ShapeStyle>(load(SHAPE_STYLE_KEY, DEFAULT_SHAPE_STYLE));

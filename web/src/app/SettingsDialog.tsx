@@ -1,6 +1,7 @@
 // Settings: everything about the app itself rather than a document. Opened
 // from the status bar. One section per topic, so more can be added.
-import { onMount } from "solid-js";
+import { For, onMount } from "solid-js";
+import { flag, FLAGS, setFlag, type Flag } from "../common/flags";
 import { draftsEnabled, setDraftsEnabled } from "../drafts/autosave";
 import { tabsMode } from "./tabs";
 import { darkMode, setDarkMode } from "./theme";
@@ -98,6 +99,19 @@ export function SettingsDialog(props: {
           <input type="checkbox" checked={draftsEnabled()} onChange={(e) => setDraftsEnabled(e.currentTarget.checked)} />
           Keep drafts of my work in this browser
         </label>
+      </section>
+
+      <section>
+        <h3>Experimental</h3>
+        <p class="hint">Unfinished features, for trying out. They may change or go away.</p>
+        <For each={Object.keys(FLAGS) as Flag[]}>
+          {(name) => (
+            <label class="row">
+              <input type="checkbox" checked={flag(name)} onChange={(e) => setFlag(name, e.currentTarget.checked)} />
+              {FLAGS[name]}
+            </label>
+          )}
+        </For>
       </section>
 
       <section>

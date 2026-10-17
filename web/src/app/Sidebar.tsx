@@ -1,6 +1,7 @@
 // The left side: the tool rail and the active tool's panel.
 import { createEffect, createSignal, Match, onCleanup, Switch } from "solid-js";
 import { useEditor } from "../document/editor";
+import { PagesPanel } from "../pages/PagesPanel";
 import { SelectionPanel } from "../select/SelectionPanel";
 import { ShapesPanel } from "../shapes/ShapesPanel";
 import { SignaturesPanel } from "../signatures/SignaturesPanel";
@@ -86,6 +87,9 @@ export function Sidebar(props: Props) {
             </Match>
             <Match when={shown() === "shapes"}>
               <ShapesPanel />
+            </Match>
+            <Match when={shown() === "pages"}>
+              <PagesPanel />
             </Match>
             <Match when={shown() === "selection"}>
               <SelectionPanel />
