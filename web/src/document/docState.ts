@@ -34,6 +34,8 @@ export interface DocState {
   /** The page list (see pages.ts). Its sizes are what placements are kept within. */
   slots: Accessor<Slot[]>;
   setSlots: Setter<Slot[]>;
+  /** Whether the pages differ from the PDF as opened (so they must be assembled to download). */
+  pagesChanged: Accessor<boolean>;
   /**
    * The PDFs the slots come from, by id. Only ever added to (an undo can bring a
    * page back), and added before any slot refers to them; closed with the document.
@@ -53,6 +55,7 @@ export interface DocState {
 export function createDocState(pages: PageSize[], source = ""): DocState {
   const [placements, setPlacements] = createStore<Placement[]>([]);
   const [slots, setSlots] = createSignal(slotsOf(source, pages));
+  const opened = savedKey(slots(), []);
   const [selection, setSelection] = createSignal<string[]>([]);
   const [editing, setEditing] = createSignal<string | null>(null);
   const [historyVersion, setHistoryVersion] = createSignal(0);
@@ -67,6 +70,7 @@ export function createDocState(pages: PageSize[], source = ""): DocState {
     session: undefined,
     slots,
     setSlots,
+    pagesChanged: () => savedKey(slots(), []) !== opened,
     sources: new Map(),
     nextPlacementId: 0,
     nextSlotKey: pages.length,

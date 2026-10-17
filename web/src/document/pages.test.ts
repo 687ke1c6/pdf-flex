@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createDocState, isDirty, savedKey, stateOf } from "./docState";
 import { createHistory } from "./history";
-import { deletePages, insertSlots, isUntouched, movePages, rearrange, slotsOf, type PagesState } from "./pages";
+import { deletePages, insertSlots, movePages, rearrange, slotsOf, type PagesState } from "./pages";
 import type { Placement } from "./placement";
 
 const LETTER = { width: 612, height: 792 };
@@ -15,16 +15,11 @@ const pageOf = (s: PagesState) => Object.fromEntries(s.placements.map((p) => [p.
 const order = (s: PagesState) => s.slots.map((x) => `${x.source}:${x.index}`);
 const other = slotsOf("other", [LETTER, { width: 842, height: 595 }], "o");
 
-test("a source opens as its pages in order, untouched", () => {
-  const slots = slotsOf("orig", [LETTER, { width: 792, height: 612 }]);
-  expect(slots).toEqual([
+test("a source opens as its pages in order", () => {
+  expect(slotsOf("orig", [LETTER, { width: 792, height: 612 }])).toEqual([
     { key: "s0", source: "orig", index: 0, width: 612, height: 792 },
     { key: "s1", source: "orig", index: 1, width: 792, height: 612 },
   ]);
-  expect(isUntouched(slots, "orig", 2)).toBe(true);
-  expect(isUntouched(slots, "orig", 3)).toBe(false);
-  expect(isUntouched(slots, "other", 2)).toBe(false);
-  expect(isUntouched([slots[1], slots[0]], "orig", 2)).toBe(false);
 });
 
 test("inserting at the start, middle and end moves the items after it", () => {
@@ -106,11 +101,16 @@ test("page changes and placements undo and redo together", () => {
 test("a document with changed pages is dirty until they're put back", () => {
   const d = createDocState([LETTER, LETTER], "orig");
   expect(isDirty(d)).toBe(false);
+  expect(d.pagesChanged()).toBe(false);
   const before = stateOf(d);
   d.setSlots(deletePages(before, [2])!.slots);
   expect(isDirty(d)).toBe(true);
+  expect(d.pagesChanged()).toBe(true);
+  d.setSlots(movePages(before, [2], 0).slots);
+  expect(d.pagesChanged()).toBe(true);
   d.setSlots(before.slots);
   expect(isDirty(d)).toBe(false);
+  expect(d.pagesChanged()).toBe(false);
   // Pages are compared by what they show, not by their keys.
   expect(savedKey(slotsOf("orig", [LETTER], "x"), [])).toBe(savedKey(slotsOf("orig", [LETTER]), []));
 });

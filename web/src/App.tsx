@@ -5,11 +5,11 @@ import { ConfirmHost, askConfirm } from "./common/ConfirmDialog";
 import { DownloadButton, DownloadDialog } from "./download/DownloadDialog";
 import { draftStore, formatSavedAt, usablePlacements, type Draft } from "./drafts/draftStore";
 import { createDocState, SIGNATURE_DRAG_TYPE, useEditor } from "./document/editor";
-import { isUntouched } from "./document/pages";
 import { openPdf } from "./viewer/pdf";
 import { Sidebar } from "./app/Sidebar";
 import { QuickBar, toolForKey } from "./app/ToolRail";
 import { StatusBar } from "./app/StatusBar";
+import { pagesPdf } from "./download/assemble";
 import { inspectPdf, sameLayout, stampPdf } from "./download/stamper";
 import { clampZoom, stepZoom } from "./viewer/zoom";
 import { UpdatePrompt } from "./app/pwa";
@@ -307,22 +307,20 @@ export function App() {
     await openFiles(pdfs);
   }
 
+  /** Whether there's anything to download: placed items, or changed pages. */
+  const hasChanges = (s: DocSession | null | undefined) => !!s && (s.state.placements.length > 0 || s.state.pagesChanged());
+
   /** Asks for a file name, then downloads (see `save`). */
   function startDownload() {
     editor.endEdit();
-    if (active()?.state.placements.length) setNaming(true);
+    if (hasChanges(active())) setNaming(true);
   }
 
   async function save(filename: string) {
     const s = active();
     editor.endEdit();
-    if (!s || !s.state.placements.length) return;
+    if (!s || !hasChanges(s)) return;
     setError("");
-    // Pages spike: until chunk 3 assembles the pages, only the original can be stamped.
-    if (!isUntouched(s.state.slots(), s.id, s.pdf.pages.length)) {
-      setError("Downloading after changing pages isn't ready yet (Pages spike, chunk 3).");
-      return;
-    }
     s.setSaving(true);
     try {
       const images = new Map<string, Uint8Array>();
@@ -331,7 +329,8 @@ export function App() {
         const sig = editor.signature(p.signatureId);
         if (sig) images.set(p.signatureId, new Uint8Array(await sig.png.arrayBuffer()));
       }
-      download(await stampPdf(s.bytes, s.state.placements, images), filename);
+      const pdf = await pagesPdf(s.state, s.id);
+      download(await stampPdf(pdf, s.state.placements, images), filename);
       editor.markSaved(s.state);
     } catch (err) {
       setError(`Couldn't save: ${err instanceof Error ? err.message : err}`);
@@ -583,7 +582,7 @@ export function App() {
                 <DownloadButton
                   title="Download a copy with your changes"
                   label={s().saving() ? "Saving…" : "Download PDF"}
-                  disabled={!editor.placements.length || s().saving()}
+                  disabled={!hasChanges(s()) || s().saving()}
                   onClick={startDownload}
                 />
               </span>

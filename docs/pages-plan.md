@@ -95,8 +95,8 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 | 0 | Feature flag | Flag off: nothing changes. Flag on: a placeholder Pages tool appears | ✅ (pending your check) |
 | 1 | Page list model | Insert/delete/move are pure functions with unit tests; placements remap; undo covers both | ✅ (pending your check) |
 | 2 | Viewer renders the page list | A document whose slots come from two PDFs displays, zooms and accepts placements | ✅ (pending your check) |
-| 3 | Assembly at download | Download of an edited page list gives the right pages, with items where they were placed; Bun test over the corpus | 🔜 |
-| 4 | Pages panel: delete and blank page | Delete and add blank pages from the panel, undo them, download | ⬜ |
+| 3 | Assembly at download | Download of an edited page list gives the right pages, with items where they were placed; Bun test over the corpus | ✅ (pending your check) |
+| 4 | Pages panel: delete and blank page | Delete and add blank pages from the panel, undo them, download | 🔜 |
 | 5 | Insert from another PDF | Insert all or some pages of another PDF anywhere, by button or drop | ⬜ |
 | 6 | Drafts | Reloading restores inserted and deleted pages | ⬜ |
 | 7 | Spike review | Decide: flag off and ship, adjust, or switch to option B | ⬜ |
@@ -189,6 +189,32 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
   - the stamper accepts the result;
   - text placed on an inserted page reads back with `pdftotext` on that page.
 - **Your check:** download a document with pages inserted from a rotated fixture and a form; open it in Chrome and Acrobat. Pages are in order, items sit where placed, form fields still work.
+
+**As built**
+- **`download/assemble.ts`:**
+  - `runsOf(slots)`: one entry per run of *consecutive ascending* pages of one source. A repeated or backwards page starts a new run, so we never depend on how pdf.js orders `includePages`.
+  - `assemble(base, baseId, slots, bytesOf)`: the original's own runs use `document: null`. Other sources get a fresh copy of their bytes, as pdf.js may transfer the buffer.
+  - `pagesPdf(doc, originalId)`: the original's bytes if the pages haven't changed. Otherwise the assembled PDF, checked with the stamper's `inspectPdf` + `sameLayout` against the slots, refusing with a user-facing message on any mismatch or pdf.js error.
+- **`DocState.pagesChanged()`** compares against the pages as opened. It replaced `isUntouched`.
+- **App:**
+  - Download stamps `pagesPdf(…)` instead of the original bytes, and the chunk 2 refusal is gone.
+  - Download is enabled when there are items *or* changed pages (`hasChanges`), so delete-only edits can be saved.
+- **Tests:**
+  - **`assemble.test.ts` (3, real pdf.js under Bun):**
+    - The run grouping.
+    - Seven pages from three corpus files (A4 with an inherited rotation, Letter, `/UserUnit`), out of order, repeated and interleaved with the base's own pages, come out in order at the right sizes.
+    - The W-9's 23 form widgets arrive on the inserted page, and the tagged base keeps its structure tree. `getFieldObjects` can't be the check: it returns nothing for the W-9 even untouched, because it's an XFA form.
+  - **`crates/pdf-stamp-wasm/assemble.ts`, run by `just wasm-smoke`:** assembles 7 pages from 4 PDFs (including the W-9, a `/Rotate 90.0` page and a `/UserUnit` page), then checks with the WASM stamper:
+    - `inspect` agrees on every size;
+    - a text marker stamped on every page is found by `pdftotext -cropbox -bbox` on that page, about 20 pt from the bottom-left as shown. Sizes alone can't catch a flipped rotation (90° and 270° pages are the same size). Poppler ignores `/UserUnit`, so its numbers are scaled;
+    - `qpdf --check` passes.
+- **Not checked yet (chunk 7):** links and bookmarks from inserted files. After a download with only page changes, the status bar shows neither "Unsaved changes" nor "Downloaded" ("Downloaded" needs items). Minor; to tidy with the panel.
+- **Verified (no browser):** `just test` (Rust, plus 104 web tests), `just lint`, `just build` and `just wasm-smoke` pass. Assembling 7 pages takes about 50 ms.
+- **Your checks** (with the flag on, using **Append PDF…**):
+  1. Append `out/fixtures/rotate-90.pdf` and `crates/pdf-stamp/tests/corpus/real/irs-w9-xfa-form.pdf` to a document. Place a signature, text and a shape on an original page, a rotated appended page and a W-9 page. Download, then open the file in Chrome and Acrobat: all pages are in order, every item sits exactly where it was placed, and the W-9's fields can still be filled in.
+  2. Append a PDF without placing anything: Download is enabled and the file has the extra pages.
+  3. Undo the append, then download: you get the original pages only.
+  4. With the flag off, a normal sign-and-download is unchanged.
 
 ### Chunk 4: Pages panel: delete and blank page
 - `pages/PagesPanel.tsx`: virtualised thumbnail list rendered by pdf.js at a small scale, with the current page highlighted. Clicking a thumbnail scrolls to it.

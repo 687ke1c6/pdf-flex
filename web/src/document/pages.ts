@@ -37,10 +37,6 @@ export interface PagesState {
 export const slotsOf = (source: string, pages: PageSize[], prefix = "s"): Slot[] =>
   pages.map(({ width, height }, index) => ({ key: `${prefix}${index}`, source, index, width, height }));
 
-/** Whether the page list is a source's pages exactly as opened: nothing to assemble. */
-export const isUntouched = (slots: Slot[], source: string, pageCount: number) =>
-  slots.length === pageCount && slots.every((s, i) => s.source === source && s.index === i);
-
 /**
  * Switches to a new page list. Each placement follows its page's slot (by key)
  * to its new position; placements whose slot is gone are dropped.
