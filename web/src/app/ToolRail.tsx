@@ -2,7 +2,6 @@
 // Select and Hand have no settings; the others have a panel, opened from the
 // rail on the far left.
 import { createEffect, createSignal, For, on, onCleanup, onMount, type JSX } from "solid-js";
-import { flag } from "../common/flags";
 
 export type PanelTool = "signatures" | "text" | "shapes" | "pages";
 export type Tool = "select" | "hand" | PanelTool;
@@ -36,15 +35,12 @@ export const TOOL_INFO: Record<Tool, ToolInfo> = {
   pages: { label: "Pages", key: "P", icon: icon("M9 3h8l3 3v11H9zM17 3v3h3M6 7v14h10") },
 };
 
-/** The panel tools in use, in rail order. Pages is behind its feature flag. Reactive. */
-export const panelTools = (): PanelTool[] => (flag("pages") ? ["signatures", "text", "shapes", "pages"] : ["signatures", "text", "shapes"]);
-export const isPanelTool = (tool: Tool): tool is PanelTool => (panelTools() as Tool[]).includes(tool);
-/** The tools in use: Select, Hand and the panel tools. Reactive. */
-const tools = (): Tool[] => ["select", "hand", ...panelTools()];
-export const isToolEnabled = (tool: Tool) => tools().includes(tool);
+export const PANEL_TOOLS: PanelTool[] = ["signatures", "text", "shapes", "pages"];
+export const isPanelTool = (tool: Tool): tool is PanelTool => (PANEL_TOOLS as Tool[]).includes(tool);
 
 /** The tool for a shortcut key, if any. */
-export const toolForKey = (key: string): Tool | undefined => tools().find((t) => TOOL_INFO[t].key === key.toUpperCase());
+export const toolForKey = (key: string): Tool | undefined =>
+  (Object.keys(TOOL_INFO) as Tool[]).find((t) => TOOL_INFO[t].key === key.toUpperCase());
 
 const TOOL_KEY = "pdf-flex:tool";
 const LAST_PANEL_TOOL_KEY = "pdf-flex:last-tool";
@@ -68,10 +64,10 @@ function store(key: string, value: string) {
 }
 
 /** The tool in use last time; Select the first time. */
-export const savedTool = () => load(TOOL_KEY, tools(), "select");
+export const savedTool = () => load(TOOL_KEY, Object.keys(TOOL_INFO) as Tool[], "select");
 export const saveTool = (tool: Tool) => store(TOOL_KEY, tool);
 /** The panel tool used most recently: the quick bar's third button. */
-export const savedPanelTool = () => load(LAST_PANEL_TOOL_KEY, panelTools(), "signatures");
+export const savedPanelTool = () => load(LAST_PANEL_TOOL_KEY, PANEL_TOOLS, "signatures");
 export const savePanelTool = (tool: PanelTool) => store(LAST_PANEL_TOOL_KEY, tool);
 
 /** A tool's tooltip: its name and shortcut. */
@@ -108,7 +104,7 @@ export function ToolRail(props: Props) {
         )}
       </For>
       <span class="rail-basic separator" aria-hidden="true" />
-      <For each={panelTools()}>
+      <For each={PANEL_TOOLS}>
         {(tool) => (
           <button
             classList={{ active: props.active === tool }}

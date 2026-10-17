@@ -44,7 +44,7 @@ All four go once the draft, not the file, is the anchor.
 |---|---|---|
 | 1 | A draft's id | **A random id** (`crypto.randomUUID()`), given when a session is created. Written only on the first change, as today, so opening and closing a file leaves nothing behind |
 | 2 | What a draft records about files | `sources: { id, name }[]`, where `id` is the PDF's SHA-256, for **every** PDF its pages use, the opened one included. `pages` is **always** stored, even unchanged |
-| 3 | Which draft opening a file offers | The **most recent draft whose pages still use that file** and that **isn't already open in a tab**. If more match, the banner adds "and N more in Recent". A draft that no longer uses the file isn't offered; Recent is the way back to it |
+| 3 | Which draft opening a file offers | The **most recent draft whose pages still use that file**. If it's open in a tab, the banner offers to switch to it (decision 5). If more match, the banner says how many more are in Recent. A draft that no longer uses the file isn't offered; Recent is the way back to it |
 | 4 | Restore and Start over | **Restore** reopens the offered draft in that tab, replacing the fresh session. **Start over** keeps the old draft: the fresh session already has its own new id, and its first change starts a new draft |
 | 5 | Opening a file that's already open | If a tab has the same file **untouched** (one source, no changes), bring it forward, as today. Otherwise open a new tab. If the most recent matching draft is open in a tab, the banner offers **Switch to it** instead of Restore |
 | 6 | Stored files | `draftFiles` keys become `<draft id>:<source hash>` for every source, the opened PDF included. A save deletes files no page uses (as inserted ones already are). A blank-only draft stores about nothing |
@@ -62,10 +62,10 @@ All four go once the draft, not the file, is the anchor.
 |---|---|---|---|
 | 1 | Draft model and migration | Old drafts load after the upgrade; new drafts have random ids, sources and pages; unit tests for the migration | ✅ (pending your check) |
 | 2 | Sessions open from a page list | A session is a page list plus sources; the "original" is gone from session, download and drafts. Everything behaves as before | ✅ (pending your check) |
-| 3 | Opening a file: offers, Start over, tabs | The offer follows decision 3; Start over never overwrites; the same file can be open in two tabs | 🔜 (Start over, Restore and the offer rule came with chunk 2) |
-| 4 | Recent shows what a draft is | "14 pages from 3 PDFs · 820 KB"; open drafts are marked by draft id | ⬜ |
-| 5 | Store only what's used | A draft stores only the PDFs its pages use; blank-only is about 0 KB | ⬜ (works since chunk 2; only the check is left) |
-| 6 | Promote | Pages plan chunk 7 review done; `pages` flag removed; the Experimental section is hidden when there are no flags | ⬜ |
+| 3 | Opening a file: offers, Start over, tabs | The offer follows decision 3; Start over never overwrites; the same file can be open in two tabs | ✅ (pending your check) |
+| 4 | Recent shows what a draft is | "14 pages from 3 PDFs · 820 KB"; open drafts are marked by draft id | ✅ (pending your check) |
+| 5 | Store only what's used | A draft stores only the PDFs its pages use; blank-only is about 0 KB | ✅ (pending your check) |
+| 6 | Promote | Pages plan chunk 7 review done; `pages` flag removed; the Experimental section is hidden when there are no flags | ✅ (pending your check) |
 
 ### Chunk 1: Draft model and migration
 - `Draft`: `id` (random) and `sources: { id, name }[]` (every PDF used), both required. `pages` is required for new drafts and optional on read (old drafts).
@@ -153,16 +153,64 @@ All four go once the draft, not the file, is the anchor.
 - Open drafts are marked by draft id.
 - **Your check:** Recent entries describe their drafts; one open in a tab says so and switches to it.
 
+**As built (chunks 3 and 4, built without stopping for checks)**
+- **Offer** (`Offer { draft, more }` on the session): the newest draft using the file, and how many others do.
+  - The banner reads "You have work using this file from 14:32 (14 pages from 3 PDFs, 2 items). There are 2 more in Recent." with **Restore** and **Start over**.
+  - If that draft is open in a tab (when the file was opened, or since), the banner says "You're working with this file in another tab (…)" with **Switch to it** and **Start over**. It's worked out live, so closing that tab turns it back into Restore.
+  - Decision 3 changed to match: drafts open in a tab are offered too, as a switch, rather than skipped.
+- **Opening a file** brings forward only a tab where that file is **untouched**: exactly its pages, nothing placed. Otherwise it's a new tab (decision 5). Tabs were already keyed by draft id in chunk 2 (`tabDocId` is the session id, and `savedTabs` stores those).
+- **Decision 9, rest:** a PDF inserted later that is digitally signed adds a warning to the document's warnings ("“b.pdf” is digitally signed …"). `sourceFrom` keeps the result of its check on the source (`digitallySigned`).
+- **Recent:** `DraftSummary.pdfs`; entries read "14 pages from 3 PDFs, 2 items · 820 KB · saved 14:32" (`describe`, also used by the banner). "Open in a tab" was already by draft id.
+- **Tests:** `describe` and `summarize().pdfs` in `drafts.test.ts`.
+
 ### Chunk 5: Store only what's used
 - Pruning (pages plan chunk 6 follow-up) covers every source, the opened PDF included.
 - Restore and reopen don't need the opened file any more (chunk 2).
 - **Your check:** add a blank page, delete every page of the opened PDF, wait for Saved. Recent shows about 0 KB, and reopening the draft works.
+
+**As built:** done in chunk 2. The autosave test covers a blank-only draft storing 0 bytes and dropping every stored PDF.
 
 ### Chunk 6: Promote
 - Pages plan chunk 7 review: memory with large inserted PDFs; download time on `out/many-pages.pdf` with inserts; whether links and bookmarks in inserted PDFs survive (note, don't fix).
 - Remove the `pages` flag: the Pages tool is always on the rail. `flags.ts` stays for future flags, and Settings hides Experimental while `FLAGS` is empty.
 - The pages plan is marked done, with pointers here.
 - **Your check:** a fresh profile has the Pages tool without touching Settings, and the whole pages feature works.
+
+**As built**
+- **Review** (Bun, real pdf.js and the WASM stamper; a one-off script, not kept):
+
+  | Case | Pages | Merge | Check + stamp a line on every page |
+  |---|---|---|---|
+  | `out/many-pages.pdf` + Mac Preview PDF + Acrobat scan | 130 | 34 ms | 54 ms |
+  | Word PDF + Mac Preview PDF + Acrobat scan | 11 | 79 ms | 92 ms |
+
+  - **Links survive:** 2 + 55 in, 57 out.
+  - **Bookmarks survive and follow their pages,** from the base PDF and from inserted ones. The scan's 4 bookmarks pointed at pages 8–11 after being inserted there. Reordered, they follow the pages; bookmarks for left-out pages are dropped. Better than the pages plan expected.
+  - **Not measured: memory.** It needs a browser. Expect about twice each PDF's size (our copy plus pdf.js's in its worker), plus about 0.4 MB per thumbnail that has been seen (they aren't freed).
+- **Flag removed:**
+  - `PANEL_TOOLS` includes Pages again as a constant. `isToolEnabled` and the editor's "tool turned off" effect are gone.
+  - `FLAGS` is empty and Settings hides Experimental while it is. A stored `pages` flag is ignored (test).
+- **Verified (no browser):** `just test` (Rust, plus 119 web tests), `just lint`, `just build` and `just wasm-smoke` pass. A one-off typecheck including the test files is clean.
+
+## 6. Your checks, all chunks
+
+Built without per-chunk checks, so here they are in one pass (a fresh profile is easiest, after step 1):
+1. **Migration:** with drafts made on `main`, load this build. They're all in Recent and restore fully. IndexedDB pdf-flex is version 3, with `draftFiles` keys `<id>:<hash>`.
+2. **Pages tool:** it's on the rail without touching Settings, and there's no Experimental section in Settings.
+3. **Offer:** open pdf-a, sign it, close the tab, open pdf-a again. The banner says "work using this file … (N pages, 1 item)". Restore brings it back.
+4. **Composition:** in that draft add pdf-b, then delete every pdf-a page. Close it and open pdf-a: no offer. Undo one pdf-a page back first instead: offered.
+5. **Start over:** on an offer, Start over and change something. Recent has both drafts, and the old one is unchanged. Opening pdf-a again says "There is 1 more in Recent".
+6. **Tabs (tabs on):**
+   - Open pdf-a twice with nothing changed: one tab comes forward.
+   - Change something, open pdf-a again: a second tab, whose banner says you're working with it in another tab, and **Switch to it** goes there.
+   - Close the first tab: the second tab's banner turns into Restore.
+   - Reload: tabs come back by draft.
+7. **Tabs off:** the same, one document at a time; replacing asks first if work isn't in a draft.
+8. **Signed PDF inserted:** insert a digitally signed PDF; the warning bar names it.
+9. **Recent:** entries read "14 pages from 3 PDFs, 2 items · … KB · saved …"; one open in a tab says so.
+10. **Blank only:** add a blank page, delete every page of the opened PDF, wait for Saved. Recent shows about 0 KB and the draft reopens.
+11. **Downloads:** a composition with links and bookmarks (e.g. the Mac Preview and Acrobat scan PDFs from the corpus): links work, bookmarks go to the right pages, items are where placed.
+12. **Memory** (DevTools → Memory): open a few large PDFs as inserts and scroll the thumbnails. Note the heap size for the record.
 
 ---
 

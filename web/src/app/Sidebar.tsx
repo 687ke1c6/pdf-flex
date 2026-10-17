@@ -13,6 +13,7 @@ type Panel = PanelTool | "selection";
 
 interface Props {
   onError(message: string): void;
+  onWarning(message: string): void;
   /** The page in view (1-based), and how to show another: for the Pages panel. */
   page: number;
   onGoToPage(page: number): void;
@@ -92,7 +93,7 @@ export function Sidebar(props: Props) {
               <ShapesPanel />
             </Match>
             <Match when={shown() === "pages"}>
-              <PagesPanel page={props.page} onGoToPage={props.onGoToPage} onError={props.onError} />
+              <PagesPanel page={props.page} onGoToPage={props.onGoToPage} onError={props.onError} onWarning={props.onWarning} />
             </Match>
             <Match when={shown() === "selection"}>
               <SelectionPanel />

@@ -40,6 +40,8 @@ export interface DraftSummary {
   id: string;
   name: string;
   pageCount: number;
+  /** How many PDFs its pages come from (blank pages aside). */
+  pdfs: number;
   size: number;
   items: number;
   savedAt: number;
@@ -49,10 +51,19 @@ export const summarize = (d: Draft): DraftSummary => ({
   id: d.id,
   name: d.name,
   pageCount: d.pageCount,
+  pdfs: sourcesUsed(d).filter((id) => !id.startsWith("blank:")).length,
   size: d.size,
   items: d.placements.length,
   savedAt: d.savedAt,
 });
+
+const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
+
+/** What a draft is made of, in words: "14 pages from 3 PDFs, 2 items", or "3 pages, 1 item" from one PDF. */
+export function describe(d: Pick<DraftSummary, "pageCount" | "pdfs" | "items">): string {
+  const pages = d.pdfs > 1 ? `${plural(d.pageCount, "page")} from ${d.pdfs} PDFs` : plural(d.pageCount, "page");
+  return `${pages}, ${plural(d.items, "item")}`;
+}
 
 const KINDS = new Set<string>(["image", "text", "shape"] satisfies Placement["kind"][]);
 

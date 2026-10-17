@@ -16,13 +16,13 @@ export async function sourceFrom(file: File, sources: Map<string, Source>): Prom
   const known = sources.get(id);
   if (known) return known;
   // The stamper's check first: pdf.js would open files the stamper refuses (owner-password restrictions).
-  const { pages } = await inspectPdf(bytes);
+  const { pages, digitallySigned } = await inspectPdf(bytes);
   const pdf = await openPdf(bytes);
   if (!sameLayout(pdf.pages, pages)) {
     await pdf.close();
     throw new Error("Its page layout is unusual, so its pages can't be added.");
   }
-  return { id, name: file.name, bytes, pdf };
+  return { id, name: file.name, bytes, pdf, digitallySigned };
 }
 
 /** A source with one blank page of this size, or the one in `sources` already. */

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { documentId } from "../common/db";
-import { formatSavedAt, formatSize, sourcesUsed, summarize, usablePlacements, type Draft } from "./draftStore";
+import { describe as describeDraft, formatSavedAt, formatSize, sourcesUsed, summarize, usablePlacements, type Draft } from "./draftStore";
 import type { Placement } from "../document/placement";
 
 const draft = (placements: unknown[]): Draft => ({
@@ -27,7 +27,7 @@ test("documentId is the SHA-256 of the bytes, so the same file always matches", 
 
 test("summarize gives what the Recent list shows", () => {
   const d = draft([{ id: "p0", kind: "image", signatureId: "s", ...box }]);
-  expect(summarize(d)).toEqual({ id: "abc", name: "form.pdf", pageCount: 3, size: 2048, items: 1, savedAt: 2 });
+  expect(summarize(d)).toEqual({ id: "abc", name: "form.pdf", pageCount: 3, pdfs: 1, size: 2048, items: 1, savedAt: 2 });
 });
 
 test("placements of kinds this version doesn't know are left out, not fatal", () => {
@@ -61,4 +61,13 @@ test("a draft uses the PDFs its pages come from; without a page list, its first 
   expect(sourcesUsed(composed)).toEqual(["b", "blank:612x792", "c"]);
   // Its first PDF is no longer used once its pages are gone.
   expect(sourcesUsed(composed)).not.toContain("abc");
+});
+
+test("a draft is described by its pages, PDFs and items", () => {
+  expect(describeDraft({ pageCount: 3, pdfs: 1, items: 1 })).toBe("3 pages, 1 item");
+  expect(describeDraft({ pageCount: 14, pdfs: 3, items: 2 })).toBe("14 pages from 3 PDFs, 2 items");
+  expect(describeDraft({ pageCount: 1, pdfs: 0, items: 0 })).toBe("1 page, 0 items");
+  const page = (source: string) => ({ source, index: 0, width: 612, height: 792 });
+  const composed = { ...draft([]), pages: [page("b"), page("blank:612x792"), page("c")], pageCount: 3 };
+  expect(summarize(composed).pdfs).toBe(2);
 });

@@ -3,10 +3,10 @@ import { documentId } from "./common/db";
 import { download } from "./common/download";
 import { ConfirmHost, askConfirm } from "./common/ConfirmDialog";
 import { DownloadButton, DownloadDialog } from "./download/DownloadDialog";
-import { draftStore, formatSavedAt, usablePlacements, type Draft } from "./drafts/draftStore";
+import { describe, draftStore, formatSavedAt, summarize, usablePlacements, type Draft } from "./drafts/draftStore";
 import { createDocState, SIGNATURE_DRAG_TYPE, useEditor } from "./document/editor";
 import { hasChanges as docHasChanges } from "./document/docState";
-import { pagesOf, type Source } from "./document/pages";
+import { pagesOf, singleSource, type Source } from "./document/pages";
 import { isBlankSource } from "./pages/blank";
 import { openPdf } from "./viewer/pdf";
 import { Sidebar } from "./app/Sidebar";
@@ -113,18 +113,20 @@ export function App() {
   }
 
   /**
-   * A session for a PDF just opened: a new draft. It's offered the most recent
-   * draft that uses this file, unless that's open in a tab already.
+   * A session for a PDF just opened: a new draft. It's offered the newest draft
+   * that uses this file (the banner offers to switch to it if it's open in a tab).
    */
   async function fileSession(name: string, bytes: Uint8Array, hash: string): Promise<DocSession> {
     const source = { id: hash, name, bytes, pdf: await openPdf(bytes) };
     const session = createSession({ id: newDraftId(), name, pages: pagesOf(source), sources: [source] }, editor);
-    const open = new Set(tabs().flatMap((t) => tabDocId(t) ?? []));
-    const offer = (await draftStore.matching(hash).catch(() => [])).find((d) => !open.has(d.id));
-    if (offer) session.setOffer(offer);
+    const [newest, ...others] = await draftStore.matching(hash).catch(() => []);
+    if (newest) session.setOffer({ draft: newest, more: others.length });
     inspect(session);
     return session;
   }
+
+  /** The tab a draft is open in, if it is. */
+  const tabOf = (draftId: string) => tabs().find((t) => tabDocId(t) === draftId);
 
   /** A session continuing a draft: its PDFs from storage, then its pages and what's placed on them. */
   async function draftSession(draft: Draft): Promise<DocSession> {
@@ -175,14 +177,20 @@ export function App() {
     old?.dispose();
   }
 
-  /** Opens a PDF in a tab. A document that already uses it comes to the front instead. */
+  /**
+   * Opens a PDF in a new document (and tab). If a tab already has this file
+   * untouched (its pages as they are, nothing placed), that comes to the front instead.
+   */
   async function open(name: string, bytes: Uint8Array) {
     setError("");
     setLoading(true);
     try {
       const hash = await documentId(bytes);
-      const existing = tabs().find((t) => t.session?.state.slots().some((slot) => slot.source === hash));
-      if (existing) return await show(existing.key);
+      const untouched = tabs().find((t) => {
+        const state = t.session?.state;
+        return state && !state.placements.length && singleSource(state.slots(), state.sources)?.id === hash;
+      });
+      if (untouched) return await show(untouched.key);
       await place(name, () => fileSession(name, bytes, hash));
     } catch (err) {
       setError(`Couldn't open ${name}: ${err instanceof Error ? err.message : err}`);
@@ -214,7 +222,7 @@ export function App() {
     const key = tabs().find((t) => t.session === session)?.key;
     if (key === undefined) return;
     // Opened from Recent in another tab since it was offered.
-    const elsewhere = tabs().find((t) => tabDocId(t) === draft.id);
+    const elsewhere = tabOf(draft.id);
     if (elsewhere) return show(elsewhere.key);
     setLoading(true);
     try {
@@ -676,26 +684,50 @@ export function App() {
       </Show>
 
       <Show when={active()?.offer()}>
-        {(draft) => (
-          <div class="restore" role="status">
-            <span>
-              You have unsaved work on this document from {formatSavedAt(draft().savedAt)} ({draft().placements.length}{" "}
-              {draft().placements.length === 1 ? "item" : "items"}
-              {draft().pages ? ", pages changed" : ""}).
-            </span>
-            <button class="primary" onClick={() => active() && restore(active()!, draft())}>
-              Restore
-            </button>
-            <button title="Start fresh from this file. The saved work stays, and you can open it from Recent" onClick={() => active()?.setOffer(null)}>
-              Start over
-            </button>
-          </div>
-        )}
+        {(offer) => {
+          const draft = () => offer().draft;
+          // Open in another tab (now, or since it was offered): switch to it rather than open it twice.
+          const elsewhere = () => tabOf(draft().id);
+          const more = () => (offer().more ? ` There ${offer().more === 1 ? "is 1 more" : `are ${offer().more} more`} in Recent.` : "");
+          return (
+            <div class="restore" role="status">
+              <Show
+                when={!elsewhere()}
+                fallback={
+                  <>
+                    <span>You're working with this file in another tab ({describe(summarize(draft()))}).{more()}</span>
+                    <button class="primary" onClick={() => elsewhere() && void show(elsewhere()!.key)}>
+                      Switch to it
+                    </button>
+                    <button title="Start fresh from this file here" onClick={() => active()?.setOffer(null)}>
+                      Start over
+                    </button>
+                  </>
+                }
+              >
+                <span>
+                  You have work using this file from {formatSavedAt(draft().savedAt)} ({describe(summarize(draft()))}).{more()}
+                </span>
+                <button class="primary" onClick={() => active() && restore(active()!, draft())}>
+                  Restore
+                </button>
+                <button title="Start fresh from this file. The saved work stays, and you can open it from Recent" onClick={() => active()?.setOffer(null)}>
+                  Start over
+                </button>
+              </Show>
+            </div>
+          );
+        }}
       </Show>
 
       <div class="body">
         <Show when={active()}>
-          <Sidebar onError={setError} page={active()?.page() ?? 1} onGoToPage={(n) => viewer?.goToPage(n)} />
+          <Sidebar
+            onError={setError}
+            onWarning={(message) => active()?.setWarning((w) => [w, message].filter(Boolean).join(" "))}
+            page={active()?.page() ?? 1}
+            onGoToPage={(n) => viewer?.goToPage(n)}
+          />
         </Show>
         <main class="main">
           <Show

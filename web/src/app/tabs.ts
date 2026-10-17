@@ -23,9 +23,9 @@ export interface DocSession {
   setPage: Setter<number>;
   /** Where it was scrolled to when last shown. */
   scroll?: ScrollPosition;
-  /** A draft found when it was opened, offered for restoring. */
-  offer: Accessor<Draft | null>;
-  setOffer: Setter<Draft | null>;
+  /** Found when its file was opened: the newest draft using that file, offered for restoring. */
+  offer: Accessor<Offer | null>;
+  setOffer: Setter<Offer | null>;
   /** Found when it was opened: it can't be edited, it's digitally signed, … */
   warning: Accessor<string>;
   setWarning: Setter<string>;
@@ -35,6 +35,13 @@ export interface DocSession {
   atRisk(): boolean;
   /** Stops its autosave and frees its PDFs. */
   dispose(): void;
+}
+
+/** A draft offered when a file is opened. */
+export interface Offer {
+  draft: Draft;
+  /** How many other drafts use the file (they're in Recent). */
+  more: number;
 }
 
 export interface Tab {
@@ -102,7 +109,7 @@ export function createSession(
     });
     const [zoom, setZoom] = createSignal(1);
     const [page, setPage] = createSignal(1);
-    const [offer, setOffer] = createSignal<Draft | null>(null);
+    const [offer, setOffer] = createSignal<Offer | null>(null);
     const [warning, setWarning] = createSignal("");
     const [saving, setSaving] = createSignal(false);
 

@@ -1,6 +1,6 @@
 // Settings: everything about the app itself rather than a document. Opened
 // from the status bar. One section per topic, so more can be added.
-import { For, onMount } from "solid-js";
+import { For, onMount, Show } from "solid-js";
 import { flag, FLAGS, setFlag, type Flag } from "../common/flags";
 import { draftsEnabled, setDraftsEnabled } from "../drafts/autosave";
 import { tabsMode } from "./tabs";
@@ -101,18 +101,20 @@ export function SettingsDialog(props: {
         </label>
       </section>
 
-      <section>
-        <h3>Experimental</h3>
-        <p class="hint">Unfinished features, for trying out. They may change or go away.</p>
-        <For each={Object.keys(FLAGS) as Flag[]}>
-          {(name) => (
-            <label class="row">
-              <input type="checkbox" checked={flag(name)} onChange={(e) => setFlag(name, e.currentTarget.checked)} />
-              {FLAGS[name]}
-            </label>
-          )}
-        </For>
-      </section>
+      <Show when={Object.keys(FLAGS).length}>
+        <section>
+          <h3>Experimental</h3>
+          <p class="hint">Unfinished features, for trying out. They may change or go away.</p>
+          <For each={Object.keys(FLAGS) as Flag[]}>
+            {(name) => (
+              <label class="row">
+                <input type="checkbox" checked={flag(name)} onChange={(e) => setFlag(name, e.currentTarget.checked)} />
+                {FLAGS[name]}
+              </label>
+            )}
+          </For>
+        </section>
+      </Show>
 
       <section>
         <h3>About pdf-flex</h3>

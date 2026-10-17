@@ -14,6 +14,8 @@ export interface Source {
   bytes: Uint8Array;
   /** Open in pdf.js, to render its pages. */
   pdf: LoadedPdf;
+  /** Checked when it was added: it carries a digital signature, which saving invalidates. */
+  digitallySigned?: boolean;
 }
 
 /** One page of the document: page `index` (0-based) of source `source`, at its display size. */

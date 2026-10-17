@@ -1,9 +1,8 @@
 import { expect, test } from "bun:test";
 import { parseFlags } from "./flags";
 
-test("only known flags are kept, wherever they are in the list", () => {
-  expect(parseFlags("pages")).toEqual(["pages"]);
-  expect(parseFlags(" other , pages ")).toEqual(["pages"]);
+test("flags that no longer exist are ignored (pages was promoted)", () => {
+  expect(parseFlags("pages")).toEqual([]);
+  expect(parseFlags(" other , pages ")).toEqual([]);
   expect(parseFlags("")).toEqual([]);
-  expect(parseFlags("Pages")).toEqual([]);
 });

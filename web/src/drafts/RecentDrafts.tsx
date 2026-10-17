@@ -1,7 +1,7 @@
 // Drafts kept in this browser, listed on the empty screen to pick up where you left off.
 import { createResource, For, Show } from "solid-js";
 import { askConfirm } from "../common/ConfirmDialog";
-import { draftStore, formatSavedAt, formatSize, type DraftSummary } from "./draftStore";
+import { describe, draftStore, formatSavedAt, formatSize, type DraftSummary } from "./draftStore";
 
 interface Props {
   /** Documents already open in a tab: shown as such, and clicking one switches to it. */
@@ -51,8 +51,7 @@ export function RecentDrafts(props: Props) {
                     </Show>
                   </span>
                   <span class="recent-meta">
-                    {draft.items} {draft.items === 1 ? "item" : "items"} · {draft.pageCount} {draft.pageCount === 1 ? "page" : "pages"} ·{" "}
-                    {formatSize(draft.size)} · saved {formatSavedAt(draft.savedAt)}
+                    {describe(draft)} · {formatSize(draft.size)} · saved {formatSavedAt(draft.savedAt)}
                   </span>
                 </button>
                 <button

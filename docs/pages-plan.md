@@ -4,7 +4,9 @@ A spike, behind a feature flag: **insert or append pages from other PDFs** into 
 
 The ground rules don't change: everything runs in the browser, nothing is uploaded, the original file is never modified, and every change can be undone.
 
-> **Status (2026-10-17): validated and being promoted.** Page operations made drafts outgrow "edits on one file", so drafts get their own identity first. That work, the review below (chunk 7) and removing the flag continue in [draft-identity-plan.md](draft-identity-plan.md).
+> **Status (2026-10-17): promoted.** The `pages` flag is gone; page tools are always on.
+>
+> Earlier status: validated and being promoted. Page operations made drafts outgrow "edits on one file", so drafts get their own identity first. That work, the review below (chunk 7) and removing the flag continue in [draft-identity-plan.md](draft-identity-plan.md).
 
 ---
 

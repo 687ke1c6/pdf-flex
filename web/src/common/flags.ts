@@ -2,12 +2,10 @@
 // Experimental. Remembered in this browser.
 import { createSignal } from "solid-js";
 
-export type Flag = "pages";
+/** Every flag, with its label in Settings. Empty while there are none (Settings then hides Experimental). */
+export const FLAGS = {} satisfies Record<string, string>;
 
-/** Every flag, with its label in Settings. */
-export const FLAGS: Record<Flag, string> = {
-  pages: "Page tools: insert pages from other PDFs, add blank pages, delete pages",
-};
+export type Flag = keyof typeof FLAGS;
 
 const KEY = "pdf-flex:flags";
 

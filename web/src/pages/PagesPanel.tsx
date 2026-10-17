@@ -1,4 +1,4 @@
-// The Pages tool (behind the "pages" feature flag): the document's pages as
+// The Pages tool: the document's pages as
 // thumbnails, to delete pages and to insert blank pages or pages from other PDFs
 // between them. See docs/pages-plan.md.
 import { createEffect, createSignal, For, on, Show } from "solid-js";
@@ -16,6 +16,8 @@ interface Props {
   page: number;
   onGoToPage(page: number): void;
   onError(message: string): void;
+  /** Something to know about the document that isn't an error (shown with its other warnings). */
+  onWarning(message: string): void;
 }
 
 
@@ -138,6 +140,8 @@ export function PagesPanel(props: Props) {
       }
       editor.addSource(loaded);
       editor.insertPages(at, pages);
+      if (isNew && loaded.digitallySigned)
+        props.onWarning(`“${loaded.name}” is digitally signed. Saving changes will make its digital signature invalid.`);
       return pages.length;
     } catch (err) {
       props.onError(`Couldn't add ${what}: ${err instanceof Error ? err.message : err}`);
