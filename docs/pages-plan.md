@@ -98,6 +98,7 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 | 3 | Assembly at download | Download of an edited page list gives the right pages, with items where they were placed; Bun test over the corpus | ✅ (pending your check) |
 | 4 | Pages panel: delete and blank page | Delete and add blank pages from the panel, undo them, download | ✅ (pending your check) |
 | 5 | Insert from another PDF | Insert all or some pages of another PDF anywhere, by button or drop | ✅ (pending your check) |
+| 5b | Insert dialog and thumbnail size | ＋ opens a dialog (blank page, or choose/drop a PDF); two thumbnail sizes | ✅ (pending your check) |
 | 6 | Drafts | Reloading restores inserted and deleted pages | 🔜 |
 | 7 | Spike review | Decide: flag off and ship, adjust, or switch to option B | ⬜ |
 
@@ -287,6 +288,29 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
   6. Drop a PNG on the list: refused with a message. Drop a PDF on the document instead: it still opens in a tab as before.
   7. Password-protected PDF (`crates/pdf-stamp/tests/corpus/generated/encrypted-user-password.pdf`) by button and by drop: refused with the "password-protected" message.
   8. Undo each insert.
+
+### Chunk 5b: Insert dialog and thumbnail size
+UX changes after trying chunks 4–5.
+- **＋ opens an Insert dialog** (`pages/InsertDialog.tsx`) instead of unfolding buttons in the gap:
+  - Its title says where ("Insert before page 3", "Insert at the end").
+  - **Blank page** is a large button that names the size it copies ("Same size as page 2: A4", "… Letter landscape", or points).
+  - **Drop a PDF here / Choose a PDF…** is a drop zone styled like the start screen's.
+  - The PDF is read and checked inside the dialog, so a refusal (password-protected, not a PDF) shows there and another can be tried. On success the dialog closes and the page-range dialog opens for multi-page PDFs.
+  - The whole dialog takes drops, so a near miss doesn't make the browser open the file.
+  - Cancel and Escape are blocked for the moment a PDF is being read, so nothing is left open with nowhere to go.
+- **"Add PDF at the end…" removed:** the ＋ after the last page does it. Maybe back later.
+- **＋ centred:** drawn as an SVG cross instead of a "+" character, whose glyph sits off-centre in the round button.
+- **Thumbnail size:** a Large/Small switch in the panel header, remembered in `localStorage` (`pdf-flex:thumb-size`). Small is 78 px wide (about 30% smaller). Thumbnails are always rendered at the large size, so switching re-renders nothing and small ones stay sharp.
+- **Bug avoided:** the dialog is keyed on the gap position, and position 0 (before page 1) would have read as "no dialog". It's wrapped in an object.
+- **Verified (no browser):** `just test` (Rust, plus 110 web tests), `just lint` and `just build` pass.
+- **Your checks:**
+  1. ＋ before page 1, between pages and after the last: the dialog opens with the right title. Blank page names the neighbour's size and inserts it there.
+  2. Choose a PDF… and drop a PDF on the dialog: a multi-page PDF goes on to the range dialog, a one-page PDF goes straight in, at that gap.
+  3. Drop a PNG or the password-protected PDF on the dialog: the error shows in the dialog, which stays open; then drop a good PDF.
+  4. Drop a PDF on the dialog's edge (outside the drop zone): taken, not opened by the browser.
+  5. The ＋ sits dead centre in its circle.
+  6. Thumbnail size: Small shrinks thumbnails (still sharp) and Large restores them; the choice survives a reload. Dropping PDFs between thumbnails still works at both sizes.
+  7. No "Add PDF at the end…" button.
 
 ### Chunk 6: Drafts
 - The draft gains optional `sources` (ids and names) and `slots`. The inserted PDFs go into `draftFiles` under their hash.

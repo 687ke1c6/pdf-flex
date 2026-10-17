@@ -4,6 +4,8 @@
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "../document/editor";
 import type { NewSlot, Slot, Source } from "../document/pages";
+import type { PageSize } from "../viewer/pdf";
+import { InsertDialog } from "./InsertDialog";
 import { PageRangeDialog } from "./PageRangeDialog";
 import { blankSource, sourceFrom } from "./source";
 import { Thumbnail } from "./Thumbnail";
@@ -18,6 +20,27 @@ interface Props {
 const pagesOf = (source: Source): NewSlot[] =>
   source.pdf.pages.map(({ width, height }, index) => ({ source: source.id, index, width, height }));
 
+/** A page size as people know it: "Letter", "A4 landscape", or points. */
+function sizeName({ width, height }: PageSize): string {
+  const near = (a: number, b: number) => Math.abs(a - b) < 1;
+  const named = [
+    { name: "Letter", w: 612, h: 792 },
+    { name: "A4", w: 595.28, h: 841.89 },
+    { name: "Legal", w: 612, h: 1008 },
+  ].find((p) => (near(width, p.w) && near(height, p.h)) || (near(width, p.h) && near(height, p.w)));
+  if (named) return width > height ? `${named.name} landscape` : named.name;
+  return `${Math.round(width)} × ${Math.round(height)} pt`;
+}
+
+const THUMB_SIZE_KEY = "pdf-flex:thumb-size";
+function loadSmall(): boolean {
+  try {
+    return localStorage.getItem(THUMB_SIZE_KEY) === "small";
+  } catch {
+    return false;
+  }
+}
+
 export function PagesPanel(props: Props) {
   const editor = useEditor();
   const slots = () => editor.slots();
@@ -25,16 +48,23 @@ export function PagesPanel(props: Props) {
   const [picked, setPicked] = createSignal<string[]>([]);
   /** Where Shift+click ranges start from: the last page clicked without Shift (0-based). */
   let anchor = 0;
-  /** The gap whose insert actions are showing (0-based position to insert at), if any. */
-  const [openGap, setOpenGap] = createSignal<number | null>(null);
+  /** The gap whose Insert dialog is open (0-based position to insert at), if any. */
+  const [inserting, setInserting] = createSignal<number | null>(null);
+  /** Small thumbnails (about 30% smaller), remembered in this browser. */
+  const [small, setSmallSignal] = createSignal(loadSmall());
+  function setSmall(on: boolean) {
+    setSmallSignal(on);
+    try {
+      localStorage.setItem(THUMB_SIZE_KEY, on ? "small" : "large");
+    } catch {
+      // Not remembered; the size still applies for now.
+    }
+  }
   /** Where dropped PDFs would go (0-based), while files are dragged over the list. */
   const [dropAt, setDropAt] = createSignal<number | null>(null);
   /** The PDF whose pages are being chosen, and where the choice goes. */
   const [choosing, setChoosing] = createSignal<{ source: Source; resolve(pages: number[] | null): void } | null>(null);
   const [busy, setBusy] = createSignal(false);
-  /** Where a chosen PDF goes (0-based). */
-  let insertAt = 0;
-  let fileInput!: HTMLInputElement;
   let list!: HTMLOListElement;
 
   const isPicked = (slot: Slot) => picked().includes(slot.key);
@@ -44,7 +74,6 @@ export function PagesPanel(props: Props) {
       editor.doc,
       () => {
         setPicked([]);
-        setOpenGap(null);
         anchor = 0;
       },
       { defer: true },
@@ -114,7 +143,6 @@ export function PagesPanel(props: Props) {
    * to how many pages went in.
    */
   async function insert(at: number, what: string, load: () => Promise<Source>): Promise<number> {
-    setOpenGap(null);
     setBusy(true);
     try {
       const loaded = await load();
@@ -181,56 +209,57 @@ export function PagesPanel(props: Props) {
     void insertFiles(pdfs, at);
   }
 
-  /** A blank page the size of its neighbour: the page before it, or after it at the start. */
+  /** The page a blank page at `at` copies its size from (1-based): the one before it, or after it at the start. */
+  const neighbour = (at: number) => (at > 0 ? at : 1);
+
   function insertBlank(at: number) {
-    const next = slots()[at > 0 ? at - 1 : 0];
-    void insert(at, "a blank page", () => blankSource(next.width, next.height, editor.doc().sources));
+    const { width, height } = slots()[neighbour(at) - 1];
+    void insert(at, "a blank page", () => blankSource(width, height, editor.doc().sources));
   }
 
-  function choosePdf(at: number) {
-    insertAt = at;
-    fileInput.click();
-  }
+  const where = (at: number) => (at < slots().length ? `before page ${at + 1}` : "at the end");
 
-  /** The space before page `at + 1` (or after the last page): ＋ opens what can be inserted there. */
-  const Gap = (gap: { at: () => number }) => {
-    const open = () => openGap() === gap.at();
-    const dropping = () => dropAt() === gap.at();
-    const where = () => (gap.at() < slots().length ? `before page ${gap.at() + 1}` : "at the end");
-    return (
-      <li class="page-gap" classList={{ open: open(), drop: dropping() }}>
-        <button
-          class="gap-plus"
-          title={`Insert ${where()}`}
-          aria-label={`Insert ${where()}`}
-          aria-expanded={open()}
-          disabled={busy()}
-          onClick={() => setOpenGap(open() ? null : gap.at())}
-        >
-          +
-        </button>
-        <Show when={open()}>
-          <span class="gap-actions">
-            <button onClick={() => insertBlank(gap.at())}>Blank page</button>
-            <button onClick={() => choosePdf(gap.at())}>PDF…</button>
-          </span>
-        </Show>
-      </li>
-    );
-  };
+  /** The space before page `at + 1` (or after the last page): ＋ asks what to insert there. */
+  const Gap = (gap: { at: () => number }) => (
+    <li class="page-gap" classList={{ open: inserting() === gap.at(), drop: dropAt() === gap.at() }}>
+      <button
+        class="gap-plus"
+        title={`Insert ${where(gap.at())}`}
+        aria-label={`Insert ${where(gap.at())}`}
+        aria-haspopup="dialog"
+        disabled={busy()}
+        onClick={() => setInserting(gap.at())}
+      >
+        {/* Drawn, not a "+" character, so it sits exactly in the middle. */}
+        <svg viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M6 2v8M2 6h8" />
+        </svg>
+      </button>
+    </li>
+  );
 
   return (
     <section class="pages-panel">
       <div class="section-head">
         <h2>Pages</h2>
         <span class="hint">{busy() ? "Adding…" : `${slots().length} ${slots().length === 1 ? "page" : "pages"}`}</span>
+        <div class="segmented thumb-size" role="group" aria-label="Thumbnail size">
+          <button title="Large thumbnails" aria-label="Large thumbnails" aria-pressed={!small()} classList={{ active: !small() }} onClick={() => setSmall(false)}>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="3" y="1.5" width="10" height="13" rx="1" />
+            </svg>
+          </button>
+          <button title="Small thumbnails" aria-label="Small thumbnails" aria-pressed={small()} classList={{ active: small() }} onClick={() => setSmall(true)}>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="5" y="4" width="6" height="8" rx="1" />
+            </svg>
+          </button>
+        </div>
       </div>
-      <button class="block" disabled={busy()} onClick={() => choosePdf(slots().length)}>
-        Add PDF at the end…
-      </button>
-      <p class="hint">Drop PDFs between pages to insert them there.</p>
+      <p class="hint">＋ between pages inserts there. You can also drop PDFs between pages.</p>
       <ol
         class="page-list"
+        classList={{ small: small() }}
         ref={list}
         aria-label="Pages"
         on:keydown={onKeyDown}
@@ -270,17 +299,21 @@ export function PagesPanel(props: Props) {
           }}
         </For>
       </ol>
-      <input
-        ref={fileInput}
-        type="file"
-        accept="application/pdf,.pdf"
-        hidden
-        onChange={(e) => {
-          const file = e.currentTarget.files?.[0];
-          e.currentTarget.value = "";
-          if (file) void insert(insertAt, `“${file.name}”`, loadFile(file));
-        }}
-      />
+      {/* Wrapped: position 0 (before page 1) would read as "nothing to show". */}
+      <Show when={inserting() !== null && { at: inserting()! }} keyed>
+        {({ at }) => (
+          <InsertDialog
+            title={`Insert ${where(at)}`}
+            blankNote={`Same size as page ${neighbour(at)}: ${sizeName(slots()[neighbour(at) - 1])}`}
+            load={(file) => sourceFrom(file, editor.doc().sources)}
+            onDone={(choice) => {
+              setInserting(null);
+              if (choice?.kind === "blank") insertBlank(at);
+              else if (choice?.kind === "pdf") void insert(at, `“${choice.source.name}”`, async () => choice.source);
+            }}
+          />
+        )}
+      </Show>
       <Show when={choosing()} keyed>
         {(c) => (
           <PageRangeDialog
