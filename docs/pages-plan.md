@@ -93,8 +93,8 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 | # | Chunk | Done when | Status |
 |---|---|---|---|
 | 0 | Feature flag | Flag off: nothing changes. Flag on: a placeholder Pages tool appears | ✅ (pending your check) |
-| 1 | Page list model | Insert/delete/move are pure functions with unit tests; placements remap; undo covers both | 🔜 |
-| 2 | Viewer renders the page list | A document whose slots come from two PDFs displays, zooms and accepts placements | ⬜ |
+| 1 | Page list model | Insert/delete/move are pure functions with unit tests; placements remap; undo covers both | ✅ (pending your check) |
+| 2 | Viewer renders the page list | A document whose slots come from two PDFs displays, zooms and accepts placements | 🔜 |
 | 3 | Assembly at download | Download of an edited page list gives the right pages, with items where they were placed; Bun test over the corpus | ⬜ |
 | 4 | Pages panel: delete and blank page | Delete and add blank pages from the panel, undo them, download | ⬜ |
 | 5 | Insert from another PDF | Insert all or some pages of another PDF anywhere, by button or drop | ⬜ |
@@ -131,6 +131,25 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 - `DocState` gains `slots` and `sources`. Opening a file makes one source and one slot per page, so nothing else changes yet.
 - History snapshots become `{ slots, placements }`. `isDirty` compares both.
 - Tests: remapping at the start, middle and end; deleting pages with items; undo/redo round trips; the last page can't be deleted.
+
+**As built**
+- **`document/pages.ts`:**
+  - `Slot { key, source, index, width, height }` and `PagesState { slots, placements }` (one undo step).
+  - `slotsOf(source, pages)`, `isUntouched` (for chunk 3's "nothing to assemble").
+  - **One remapping rule, `rearrange(state, slots)`:** each placement follows its slot's key to its new position, and placements whose slot is gone are dropped. `insertSlots`, `deletePages` (`undefined` if it would leave no pages) and `movePages` only build the new slot list.
+  - Keys make the same source page safe to have twice: items stay on their own copy.
+- **`DocState`:**
+  - The fixed `pages` array became a `slots` signal, created from the source's id (`createDocState(pages, id)`), with `nextSlotKey`.
+  - `history` is `History<PagesState>`; `stateOf(d)` takes a snapshot.
+  - `isDirty` / `markSaved` compare `savedKey(slots, placements)`: pages by source and index (not key), plus placements.
+- **Editor:**
+  - Every checkpoint is now `{ slots, placements }`, and undo/redo restore both. The in-place text edit still records placements and pairs them with the current slots; page operations end an edit first.
+  - New, not called from the UI yet: `slots()`, `insertPages(at, newSlots)`, `deletePages(pages)` (false if it would delete every page), `movePages(pages, at)` (no step if nothing moves).
+  - `pageSize` reads the slots, so it follows page changes.
+- **Moved to chunk 2:** sources (bytes plus pdf.js document per source). Nothing renders from them yet, and the viewer still draws the original's pages.
+- **Moved to chunk 6:** autosave still versions placements only.
+- **Verified (no browser):** `just test` (Rust, plus 101 web tests with 9 new in `pages.test.ts`), `just lint` and `just build` pass.
+- **Your checks** (a regression pass, since nothing new is visible yet): place, move, resize, edit text, delete, then undo and redo each step back and forth. Unsaved changes → Downloaded after a download. Switching tabs keeps each document's undo history.
 
 ### Chunk 2: Viewer renders the page list
 - `PageView` takes a slot and asks the slot's source for its pdf.js page. `Viewer` iterates slots instead of `1..numPages`.

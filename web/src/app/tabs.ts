@@ -78,7 +78,7 @@ export const tabName = (tab: Tab) => tab.session?.name ?? tab.pending?.name ?? "
  */
 export function createSession(init: { id: string; name: string; bytes: Uint8Array; pdf: LoadedPdf; draft?: Draft }, editor: Editor): DocSession {
   return createRoot((disposeRoot) => {
-    const state = createDocState(init.pdf.pages);
+    const state = createDocState(init.pdf.pages, init.id);
     const draftDoc: DraftDocument = {
       id: init.id,
       name: init.name,
