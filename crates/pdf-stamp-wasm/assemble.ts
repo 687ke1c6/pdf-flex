@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { getDocument } from "../../web/node_modules/pdfjs-dist/legacy/build/pdf.mjs";
 import { assemble } from "../../web/src/download/assemble";
+import { blankPdf } from "../../web/src/pages/blank";
 import { initSync, inspect, stamp } from "./pkg/pdf_stamp_wasm.js";
 
 initSync({ module: readFileSync(new URL("./pkg/pdf_stamp_wasm_bg.wasm", import.meta.url)) });
@@ -18,8 +19,11 @@ const files = {
   form: "real/irs-w9-xfa-form.pdf",
   rotated: "generated/rotate-real-number.pdf",
 };
-type Id = keyof typeof files;
-const bytes = Object.fromEntries(Object.entries(files).map(([id, f]) => [id, new Uint8Array(readFileSync(corpus + f))])) as Record<Id, Uint8Array>;
+type Id = keyof typeof files | "blank";
+const bytes = {
+  ...Object.fromEntries(Object.entries(files).map(([id, f]) => [id, new Uint8Array(readFileSync(corpus + f))])),
+  blank: blankPdf(500, 300), // made by the app, not read from a file
+} as Record<Id, Uint8Array>;
 
 async function sizes(data: Uint8Array) {
   const doc = await getDocument({ data: data.slice(), verbosity: 0 }).promise;
@@ -27,10 +31,10 @@ async function sizes(data: Uint8Array) {
   for (let i = 1; i <= doc.numPages; i++) out.push((await doc.getPage(i)).getViewport({ scale: 1 }));
   return { doc, sizes: out.map(({ width, height }) => ({ width, height })) };
 }
-const opened = Object.fromEntries(await Promise.all((Object.keys(files) as Id[]).map(async (id) => [id, await sizes(bytes[id])]))) as Record<Id, Awaited<ReturnType<typeof sizes>>>;
+const opened = Object.fromEntries(await Promise.all((Object.keys(bytes) as Id[]).map(async (id) => [id, await sizes(bytes[id])]))) as Record<Id, Awaited<ReturnType<typeof sizes>>>;
 
 // Inserted before, between and after the base document's pages, one of them twice.
-const order: [Id, number][] = [["form", 0], ["tree", 0], ["small", 0], ["tree", 2], ["rotated", 0], ["tree", 1], ["small", 0]];
+const order: [Id, number][] = [["form", 0], ["tree", 0], ["small", 0], ["blank", 0], ["tree", 2], ["rotated", 0], ["tree", 1], ["small", 0]];
 const slots = order.map(([source, index], i) => ({ key: `k${i}`, source, index, ...opened[source].sizes[index] }));
 
 const started = performance.now();
@@ -78,4 +82,4 @@ slots.forEach((s, i) => {
 execFileSync("qpdf", ["--check", "out/assemble-smoke.pdf"], { stdio: "ignore" });
 
 if (failures) process.exit(1);
-console.log(`assemble ok: ${slots.length} pages from 4 PDFs, sizes agree, every marker on its page where placed; qpdf ok: out/assemble-smoke.pdf`);
+console.log(`assemble ok: ${slots.length} pages from 4 PDFs and a blank page, sizes agree, every marker on its page where placed; qpdf ok: out/assemble-smoke.pdf`);

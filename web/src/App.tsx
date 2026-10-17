@@ -639,7 +639,7 @@ export function App() {
 
       <div class="body">
         <Show when={active()}>
-          <Sidebar onError={setError} />
+          <Sidebar onError={setError} page={active()?.page() ?? 1} onGoToPage={(n) => viewer?.goToPage(n)} />
         </Show>
         <main class="main">
           <Show

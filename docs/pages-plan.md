@@ -96,8 +96,8 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 | 1 | Page list model | Insert/delete/move are pure functions with unit tests; placements remap; undo covers both | ✅ (pending your check) |
 | 2 | Viewer renders the page list | A document whose slots come from two PDFs displays, zooms and accepts placements | ✅ (pending your check) |
 | 3 | Assembly at download | Download of an edited page list gives the right pages, with items where they were placed; Bun test over the corpus | ✅ (pending your check) |
-| 4 | Pages panel: delete and blank page | Delete and add blank pages from the panel, undo them, download | 🔜 |
-| 5 | Insert from another PDF | Insert all or some pages of another PDF anywhere, by button or drop | ⬜ |
+| 4 | Pages panel: delete and blank page | Delete and add blank pages from the panel, undo them, download | ✅ (pending your check) |
+| 5 | Insert from another PDF | Insert all or some pages of another PDF anywhere, by button or drop | 🔜 (insert all pages at a position: done in chunk 4) |
 | 6 | Drafts | Reloading restores inserted and deleted pages | ⬜ |
 | 7 | Spike review | Decide: flag off and ship, adjust, or switch to option B | ⬜ |
 
@@ -221,6 +221,39 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 - **×** and Delete remove the selected pages. A status-bar hint says how many items went with them (undo restores).
 - **＋** between thumbnails: *Blank page* (size of the page before it, or after it at the start).
 - **Your check:** delete a page with items, undo, redo; add blank pages at the start, middle and end; download; try to delete the last page.
+
+**As built**
+- **`pages/blank.ts`:** `blankPdf(width, height)` writes a three-object PDF with an exact cross-reference table. Tests cover pdf.js opening it at the right size with no content, and every xref entry pointing at its object; `qpdf --check` was checked once. Blank sources are `blank:WxH`, so the same size is one source, and drafts (chunk 6) can regenerate them instead of storing them.
+- **`pages/source.ts`:** `blankSource` added next to `sourceFrom`.
+- **`pages/Thumbnail.tsx`:** renders a page 112 px wide (at device pixel ratio) the first time it comes within 300 px of view, then keeps it. Its box keeps the page's proportions before it renders.
+- **`pages/PagesPanel.tsx`:**
+  - **Header:** the page count (or "Adding…") and **Add PDF at the end…**.
+  - **Thumbnails** with page numbers. The page in view has a grey border; selected pages are blue.
+    - Click selects and scrolls to the page; Ctrl/Cmd+click toggles; Shift+click selects a range.
+    - Up/Down move the selection (and focus).
+  - **Deleting:**
+    - **×** on a page deletes it, or every selected page if it's one of them. Delete/Backspace delete the selection.
+    - The keys are handled on the list and stopped there, so App's handler never also deletes selected items.
+    - Deleting every page is refused with a message.
+  - **Inserting:** a **＋** in each gap (before the first page, between pages, after the last) opens **Blank page** (the size of the page before it, or after it at the start) and **PDF…** (every page of the chosen PDF, at that position). This replaced chunk 2's Append scaffold.
+  - **Tabs:** selection and the open gap reset when the active document changes; slot keys are only unique within a document.
+- **Sidebar/App:** the panel gets the page in view and `goToPage`.
+- **Status bar:**
+  - The Pages hint describes the panel.
+  - "Downloaded" also shows after a download with only page changes (fixes the chunk 3 nit).
+- **`just wasm-smoke`:** the assembly check now includes a generated blank page (8 pages).
+- **Not done:** drag to reorder (out of scope), and freeing far-away thumbnails (they're small: about 0.4 MB each at 2× pixel ratio; chunk 7 measures).
+- **Verified (no browser):** `just test` (Rust, plus 107 web tests with 3 new for blank pages), `just lint`, `just build` and `just wasm-smoke` pass.
+- **Your checks** (flag on, Pages tool):
+  1. Thumbnails match the pages (rotated and landscape ones too). The page in view is outlined as you scroll the document; clicking a thumbnail scrolls there.
+  2. Hover between thumbnails: a blue line with ＋. Click it and choose **Blank page** at the start, middle and end; each takes its neighbour's size.
+  3. **PDF…** in a gap inserts that PDF there; **Add PDF at the end…** appends.
+  4. Place an item on a page, then delete the page with × (the item goes too). Undo brings both back; redo removes them again.
+  5. Select pages with Ctrl+click and Shift+click, then press Delete: only those pages go. Placed items elsewhere stay, and the Delete key doesn't also delete a selected item.
+  6. Try deleting every page: refused with a message.
+  7. Download: pages in panel order, blank pages blank, items where placed. "Downloaded" shows afterwards.
+  8. Touch screen or narrow window: ＋ and × are always visible.
+  9. With two tabs open, select pages in one, switch tabs, press Delete: nothing is deleted in the other.
 
 ### Chunk 5: Insert from another PDF
 - *Insert PDF…* (at the ＋ position) and *Add PDF…* (append) open a file picker. Dropping a PDF on the panel inserts it at the drop line.

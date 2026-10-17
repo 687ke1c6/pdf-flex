@@ -68,6 +68,8 @@ export function StatusBar(props: Props) {
   };
 
   const count = () => editor.placements.length;
+  /** There's something to download: placed items, or changed pages. */
+  const edited = () => count() > 0 || editor.doc().pagesChanged();
 
   const hint = () => {
     if (editor.editing()) return "Escape or click elsewhere to finish editing";
@@ -92,7 +94,7 @@ export function StatusBar(props: Props) {
       case "shapes":
         return DRAW_HINTS[editor.shapeTool()];
       case "pages":
-        return "Experimental: page tools are coming to the panel";
+        return "Click a page to select it (Ctrl/Shift: several) · Delete removes it with what's on it · + inserts · Ctrl+Z undoes";
     }
   };
 
@@ -110,13 +112,13 @@ export function StatusBar(props: Props) {
         <Show
           when={draftsEnabled()}
           fallback={
-            <Show when={editor.dirty()} fallback={<Show when={count()}><span class="status-saved">Downloaded</span></Show>}>
+            <Show when={editor.dirty()} fallback={<Show when={edited()}><span class="status-saved">Downloaded</span></Show>}>
               <span class="status-unsaved">Unsaved changes</span>
             </Show>
           }
         >
           <Show when={props.autosave}>{(state) => <DraftStatus state={state()} />}</Show>
-          <Show when={!editor.dirty() && count()}>
+          <Show when={!editor.dirty() && edited()}>
             <span class="status-saved">Downloaded</span>
           </Show>
         </Show>

@@ -13,6 +13,9 @@ type Panel = PanelTool | "selection";
 
 interface Props {
   onError(message: string): void;
+  /** The page in view (1-based), and how to show another: for the Pages panel. */
+  page: number;
+  onGoToPage(page: number): void;
 }
 
 /** Below this width the panel would cover most of the page, so it opens and closes on its own (see below). */
@@ -89,7 +92,7 @@ export function Sidebar(props: Props) {
               <ShapesPanel />
             </Match>
             <Match when={shown() === "pages"}>
-              <PagesPanel onError={props.onError} />
+              <PagesPanel page={props.page} onGoToPage={props.onGoToPage} onError={props.onError} />
             </Match>
             <Match when={shown() === "selection"}>
               <SelectionPanel />
