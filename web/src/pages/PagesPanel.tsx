@@ -9,6 +9,7 @@ import { InsertDialog } from "./InsertDialog";
 import { PageRangeDialog } from "./PageRangeDialog";
 import { blankSource, sourceFrom } from "./source";
 import { Thumbnail } from "./Thumbnail";
+import { thumbsSmall, ThumbSizeSwitch } from "./ThumbSizeSwitch";
 
 interface Props {
   /** The page in view (1-based). */
@@ -32,15 +33,6 @@ function sizeName({ width, height }: PageSize): string {
   return `${Math.round(width)} × ${Math.round(height)} pt`;
 }
 
-const THUMB_SIZE_KEY = "pdf-flex:thumb-size";
-function loadSmall(): boolean {
-  try {
-    return localStorage.getItem(THUMB_SIZE_KEY) === "small";
-  } catch {
-    return false;
-  }
-}
-
 export function PagesPanel(props: Props) {
   const editor = useEditor();
   const slots = () => editor.slots();
@@ -50,16 +42,6 @@ export function PagesPanel(props: Props) {
   let anchor = 0;
   /** The gap whose Insert dialog is open (0-based position to insert at), if any. */
   const [inserting, setInserting] = createSignal<number | null>(null);
-  /** Small thumbnails (about 30% smaller), remembered in this browser. */
-  const [small, setSmallSignal] = createSignal(loadSmall());
-  function setSmall(on: boolean) {
-    setSmallSignal(on);
-    try {
-      localStorage.setItem(THUMB_SIZE_KEY, on ? "small" : "large");
-    } catch {
-      // Not remembered; the size still applies for now.
-    }
-  }
   /** Where dropped PDFs would go (0-based), while files are dragged over the list. */
   const [dropAt, setDropAt] = createSignal<number | null>(null);
   /** The PDF whose pages are being chosen, and where the choice goes. */
@@ -243,23 +225,12 @@ export function PagesPanel(props: Props) {
       <div class="section-head">
         <h2>Pages</h2>
         <span class="hint">{busy() ? "Adding…" : `${slots().length} ${slots().length === 1 ? "page" : "pages"}`}</span>
-        <div class="segmented thumb-size" role="group" aria-label="Thumbnail size">
-          <button title="Large thumbnails" aria-label="Large thumbnails" aria-pressed={!small()} classList={{ active: !small() }} onClick={() => setSmall(false)}>
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="3" y="1.5" width="10" height="13" rx="1" />
-            </svg>
-          </button>
-          <button title="Small thumbnails" aria-label="Small thumbnails" aria-pressed={small()} classList={{ active: small() }} onClick={() => setSmall(true)}>
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="5" y="4" width="6" height="8" rx="1" />
-            </svg>
-          </button>
-        </div>
+        <ThumbSizeSwitch />
       </div>
       <p class="hint">＋ between pages inserts there. You can also drop PDFs between pages.</p>
       <ol
         class="page-list"
-        classList={{ small: small() }}
+        classList={{ small: thumbsSmall() }}
         ref={list}
         aria-label="Pages"
         on:keydown={onKeyDown}

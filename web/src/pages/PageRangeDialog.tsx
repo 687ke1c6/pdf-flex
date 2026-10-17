@@ -3,6 +3,7 @@ import { createSignal, For, onMount, Show } from "solid-js";
 import type { Source } from "../document/pages";
 import { formatRanges, parseRanges } from "./ranges";
 import { Thumbnail } from "./Thumbnail";
+import { thumbsSmall, ThumbSizeSwitch } from "./ThumbSizeSwitch";
 
 interface Props {
   source: Source;
@@ -45,7 +46,7 @@ export function PageRangeDialog(props: Props) {
       >
         <h2>Insert pages from “{props.source.name}”</h2>
         <p class="hint">
-          It has {count} pages. Insert all of them, or type which ones, or click pages to pick them.
+          It has {count} pages. Insert all of them, or choose which ones.
         </p>
         <label class="row">
           <input type="radio" name="which" checked={!some()} onChange={() => setSome(false)} />
@@ -80,7 +81,11 @@ export function PageRangeDialog(props: Props) {
             {chosen() as string}
           </p>
         </Show>
-        <ol class="range-thumbs" aria-label="Pages">
+        <div class="range-thumbs-head">
+          <span class="hint">Click pages to pick them.</span>
+          <ThumbSizeSwitch />
+        </div>
+        <ol class="range-thumbs" classList={{ small: thumbsSmall() }} aria-label="Pages">
           <For each={props.source.pdf.pages}>
             {(size, i) => (
               <li>

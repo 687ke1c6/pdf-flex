@@ -311,6 +311,10 @@ UX changes after trying chunks 4–5.
   5. The ＋ sits dead centre in its circle.
   6. Thumbnail size: Small shrinks thumbnails (still sharp) and Large restores them; the choice survives a reload. Dropping PDFs between thumbnails still works at both sizes.
   7. No "Add PDF at the end…" button.
+- **Follow-up:**
+  - The size switch is now `pages/ThumbSizeSwitch.tsx`, ordered Small then Large, with magnifier −/+ icons.
+  - It's one remembered setting shared by the Pages panel and the page range dialog, which got the switch above its thumbnails (small ones fit more columns).
+  - **Your check:** the switch reads − then +, in both places, and changing it in one changes the other.
 
 ### Chunk 6: Drafts
 - The draft gains optional `sources` (ids and names) and `slots`. The inserted PDFs go into `draftFiles` under their hash.
