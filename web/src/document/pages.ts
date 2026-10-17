@@ -85,12 +85,14 @@ export function insertSlots(state: PagesState, at: number, added: Slot[]): Pages
 }
 
 /**
- * Deletes the pages at these 1-based numbers, with their placements. Returns
- * `undefined` if that would leave no pages: a document always has one.
+ * Deletes the pages at these 1-based numbers, with their placements. A document
+ * always has a page: if every page goes, `blank` takes their place (without it,
+ * nothing is deleted and the result is `undefined`).
  */
-export function deletePages(state: PagesState, pages: number[]): PagesState | undefined {
+export function deletePages(state: PagesState, pages: number[], blank?: Slot): PagesState | undefined {
   const gone = new Set(pages);
   const slots = state.slots.filter((_, i) => !gone.has(i + 1));
+  if (!slots.length && blank) slots.push(blank);
   return slots.length ? rearrange(state, slots) : undefined;
 }
 

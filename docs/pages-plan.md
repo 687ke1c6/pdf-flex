@@ -66,7 +66,7 @@ Settled 2026-10-17 unless marked otherwise.
 | 4 | Feature flag | `flags.ts`, switched only from **Settings → Experimental** and remembered in `localStorage` (`pdf-flex:flags`). No URL parameter: the spike lives on its own branch. Flag off: no Pages tool, and the app behaves exactly as today |
 | 5 | UX entry point | **A "Pages" tool on the rail** with a thumbnail panel (§4, option 1). *Decided* |
 | 6 | Drafts | Spike: page edits **are** saved in drafts (the inserted PDFs go into `draftFiles`, the page list into the draft). Without this, autosave would silently lose work. Optional fields, so old drafts still load. *Decided* |
-| 7 | Deleting the last page | Refused; a document always has at least one page |
+| 7 | Deleting the last page | Refused; a document always has at least one page. *Changed after promotion:* deleting every page is allowed and leaves one blank page the size of page 1, as one undo step |
 | 8 | Digitally signed documents | Unchanged: the existing warning already says editing invalidates the signature |
 
 ---

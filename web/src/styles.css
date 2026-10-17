@@ -167,6 +167,12 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 }
 .tool-rail button:hover { background: var(--hover); color: var(--text); }
 .tool-rail button.active { background: var(--accent-soft); color: var(--accent); }
+/* A tool that's new and not yet opened: an orange dot at its top right. */
+.tool-rail button.new { position: relative; }
+.tool-rail button.new::after {
+  content: ""; position: absolute; top: 0.2rem; right: 0.2rem; width: 0.5rem; height: 0.5rem;
+  border-radius: 50%; background: #f97316; box-shadow: 0 0 0 2px var(--panel);
+}
 .tool-rail .separator { width: 1.5rem; height: 1px; margin: 0.15rem 0; background: var(--border); }
 /* Select and Hand are in the rail only on narrow screens; elsewhere they're on the quick bar. */
 .tool-rail .rail-basic { display: none; }

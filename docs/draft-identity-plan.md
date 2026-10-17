@@ -222,3 +222,12 @@ Built without per-chunk checks, so here they are in one pass (a fresh profile is
 - **The same PDF stored twice** when two drafts use it. Shared storage is out of scope; measure in chunk 6.
 - **Matching cost:** `matching` reads every draft to find users of a hash. Fine for tens of drafts; an index on source ids (`multiEntry`) if it isn't.
 - **Names:** with no "original", the draft's name is the first file's name and never changes. Naming is out of scope, but the banner and Recent should describe drafts well enough to tell apart.
+
+## 7. After the PR
+
+- **Deleting every page** is allowed: the document is left with one blank page the size of page 1, in the same undo step. (`deletePages(state, pages, blank)`; the panel makes the blank page first.) It was refused before, but drafts no longer depend on the opened PDF, so nothing needs a page of it.
+- **"New" dot on the Pages rail button:** orange, top right, and the tooltip ends "· New". It goes once the Pages tool is first opened, remembered in `localStorage` (`pdf-flex:seen-tools`). `NEW_TOOLS` in `ToolRail.tsx` lists tools to mark this way.
+- **Your checks:**
+  1. In a fresh profile (or after removing `pdf-flex:seen-tools`), the Pages button has an orange dot in light and dark mode. Open Pages: the dot goes, and stays gone after a reload.
+  2. Select every page (Shift+click) and press Delete, or × the only page. One blank page the size of page 1 is left, with no message. Undo brings all the pages and their items back.
+

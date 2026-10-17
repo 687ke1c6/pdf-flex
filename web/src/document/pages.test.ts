@@ -46,10 +46,14 @@ test("deleting pages removes their items and closes the gap", () => {
   expect(pageOf(deletePages(doc(), [1, 3])!)).toEqual({ b: 1 });
 });
 
-test("the last page can't be deleted", () => {
+test("deleting every page leaves the blank page given, or nothing is deleted", () => {
   expect(deletePages(doc(), [1, 2, 3])).toBeUndefined();
-  const one: PagesState = { slots: slotsOf("orig", [LETTER]), placements: [] };
-  expect(deletePages(one, [1])).toBeUndefined();
+  const blank = { key: "b", source: "blank:612x792", index: 0, ...LETTER };
+  const next = deletePages(doc(), [1, 2, 3], blank)!;
+  expect(next.slots).toEqual([blank]);
+  expect(next.placements).toEqual([]);
+  // Not needed while a page is left.
+  expect(order(deletePages(doc(), [1, 2], blank)!)).toEqual(["orig:2"]);
 });
 
 test("moving pages keeps their order and takes their items along", () => {

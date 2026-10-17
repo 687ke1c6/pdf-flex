@@ -77,13 +77,18 @@ export function PagesPanel(props: Props) {
     }
   }
 
-  /** Deletes pages (1-based). */
-  function remove(pages: number[]) {
+  /** Deletes pages (1-based). Deleting every page leaves a blank page the size of the first. */
+  async function remove(pages: number[]) {
     if (!pages.length) return;
-    if (!editor.deletePages(pages)) {
-      props.onError("A document needs at least one page, so its last page can't be deleted.");
-      return;
-    }
+    if (new Set(pages).size >= slots().length) {
+      const { width, height } = slots()[0];
+      try {
+        const blank = editor.addSource(await blankSource(width, height, editor.doc().sources));
+        editor.deletePages(pages, { source: blank.id, index: 0, width, height });
+      } catch (err) {
+        props.onError(`Couldn't delete the pages: ${err instanceof Error ? err.message : err}`);
+      }
+    } else editor.deletePages(pages);
     const left = new Set(slots().map((s) => s.key));
     setPicked((keys) => keys.filter((k) => left.has(k)));
   }
@@ -91,8 +96,8 @@ export function PagesPanel(props: Props) {
   /** The × on a page: deletes the selected pages if it's one of them, else just that page. */
   function removeFrom(i: number) {
     const slot = slots()[i];
-    if (!isPicked(slot)) return remove([i + 1]);
-    remove(slots().flatMap((s, j) => (isPicked(s) ? [j + 1] : [])));
+    if (!isPicked(slot)) return void remove([i + 1]);
+    void remove(slots().flatMap((s, j) => (isPicked(s) ? [j + 1] : [])));
   }
 
   /** Delete removes the selected pages; Up and Down move the selection. Kept from the document's own shortcuts. */
@@ -101,7 +106,7 @@ export function PagesPanel(props: Props) {
     if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
       e.stopPropagation();
-      remove(slots().flatMap((s, j) => (isPicked(s) ? [j + 1] : [])));
+      void remove(slots().flatMap((s, j) => (isPicked(s) ? [j + 1] : [])));
       return;
     }
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {

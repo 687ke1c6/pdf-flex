@@ -71,7 +71,33 @@ export const savedPanelTool = () => load(LAST_PANEL_TOOL_KEY, PANEL_TOOLS, "sign
 export const savePanelTool = (tool: PanelTool) => store(LAST_PANEL_TOOL_KEY, tool);
 
 /** A tool's tooltip: its name and shortcut. */
-export const toolTitle = (tool: Tool) => `${TOOL_INFO[tool].label} (${TOOL_INFO[tool].key})`;
+export const toolTitle = (tool: Tool) => `${TOOL_INFO[tool].label} (${TOOL_INFO[tool].key})${isNew(tool) ? " · New" : ""}`;
+
+// New tools wear a dot on the rail until they're first opened, remembered in this browser.
+const NEW_TOOLS: Tool[] = ["pages"];
+const SEEN_KEY = "pdf-flex:seen-tools";
+const [seen, setSeen] = createSignal<string[]>(
+  (() => {
+    try {
+      return JSON.parse(localStorage.getItem(SEEN_KEY) ?? "[]") as string[];
+    } catch {
+      return [];
+    }
+  })(),
+);
+/** Whether a tool is new and hasn't been opened yet. Reactive. */
+export const isNew = (tool: Tool) => NEW_TOOLS.includes(tool) && !seen().includes(tool);
+/** Marks a tool as opened: it's no longer shown as new. */
+export function markSeen(tool: Tool) {
+  if (!isNew(tool)) return;
+  const next = [...seen(), tool];
+  setSeen(next);
+  try {
+    localStorage.setItem(SEEN_KEY, JSON.stringify(next));
+  } catch {
+    // Not remembered; the dot comes back after a reload.
+  }
+}
 
 interface Props {
   active: Tool;
@@ -107,9 +133,9 @@ export function ToolRail(props: Props) {
       <For each={PANEL_TOOLS}>
         {(tool) => (
           <button
-            classList={{ active: props.active === tool }}
+            classList={{ active: props.active === tool, new: isNew(tool) }}
             title={toolTitle(tool)}
-            aria-label={TOOL_INFO[tool].label}
+            aria-label={isNew(tool) ? `${TOOL_INFO[tool].label} (new)` : TOOL_INFO[tool].label}
             aria-pressed={props.active === tool && props.open}
             onClick={() => props.onSelect(tool)}
           >

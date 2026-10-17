@@ -19,7 +19,7 @@ import {
 } from "./placement";
 import { alignedBox, alignTarget, limitGroupMove, type AlignEdge, type GroupBox } from "../select/arrange";
 import { DEFAULT_SHAPE_STYLE, lineBox, lineEnds, SHAPE_KINDS, type ShapeKind, type ShapeStyle } from "../shapes/shapes";
-import { isPanelTool, savedPanelTool, savePanelTool, savedTool, saveTool, type PanelTool, type Tool } from "../app/ToolRail";
+import { isPanelTool, markSeen, savedPanelTool, savePanelTool, savedTool, saveTool, type PanelTool, type Tool } from "../app/ToolRail";
 import { LINE_HEIGHT, opposite, relaidOut, resizedTextSize, type TextStyle } from "../text/textLayout";
 import {
   exportSignatures,
@@ -237,6 +237,7 @@ function createEditor() {
       endEdit();
       setToolSignal(next);
       saveTool(next);
+      markSeen(next);
       if (isPanelTool(next)) {
         setLastPanelTool(next);
         savePanelTool(next);
@@ -468,15 +469,16 @@ function createEditor() {
       changePages(insertSlots(snapshot(), at, added));
     },
     /**
-     * Deletes pages (1-based), and what's placed on them, as one undo step.
-     * Returns false, changing nothing, if that would delete every page.
+     * Deletes pages (1-based), and what's placed on them, as one undo step. If
+     * that's every page, `blank` (a page of a source already added) is left in their place.
      */
-    deletePages(pages: number[]): boolean {
+    deletePages(pages: number[], blank?: NewSlot) {
       endEdit();
-      const next = deletePages(snapshot(), pages);
-      if (!next) return false;
+      const d = doc();
+      const next = deletePages(snapshot(), pages, blank && { ...blank, key: `s${d.nextSlotKey++}` });
+      if (!next) return;
       checkpoint();
-      return changePages(next);
+      changePages(next);
     },
     /** Moves pages (1-based), keeping their order, to before 0-based position `at`. One undo step. */
     movePages(pages: number[], at: number) {
