@@ -60,11 +60,11 @@ All four go once the draft, not the file, is the anchor.
 
 | # | Chunk | Done when | Status |
 |---|---|---|---|
-| 1 | Draft model and migration | Old drafts load after the upgrade; new drafts have random ids, sources and pages; unit tests for the migration | 🔜 |
-| 2 | Sessions open from a page list | A session is a page list plus sources; the "original" is gone from session, download and drafts. Everything behaves as before | ⬜ |
-| 3 | Opening a file: offers, Start over, tabs | The offer follows decision 3; Start over never overwrites; the same file can be open in two tabs | ⬜ |
+| 1 | Draft model and migration | Old drafts load after the upgrade; new drafts have random ids, sources and pages; unit tests for the migration | ✅ (pending your check) |
+| 2 | Sessions open from a page list | A session is a page list plus sources; the "original" is gone from session, download and drafts. Everything behaves as before | ✅ (pending your check) |
+| 3 | Opening a file: offers, Start over, tabs | The offer follows decision 3; Start over never overwrites; the same file can be open in two tabs | 🔜 (Start over, Restore and the offer rule came with chunk 2) |
 | 4 | Recent shows what a draft is | "14 pages from 3 PDFs · 820 KB"; open drafts are marked by draft id | ⬜ |
-| 5 | Store only what's used | A draft stores only the PDFs its pages use; blank-only is about 0 KB | ⬜ |
+| 5 | Store only what's used | A draft stores only the PDFs its pages use; blank-only is about 0 KB | ⬜ (works since chunk 2; only the check is left) |
 | 6 | Promote | Pages plan chunk 7 review done; `pages` flag removed; the Experimental section is hidden when there are no flags | ⬜ |
 
 ### Chunk 1: Draft model and migration
@@ -76,6 +76,22 @@ All four go once the draft, not the file, is the anchor.
   - `matching(sourceId)` returns drafts whose `pages` (or, for old drafts, first source) use that file, most recent first.
 - **Your check:** with drafts made on `main` (or this branch before the chunk), load the new build. Recent still lists them, and each restores with its pages and items. DevTools → IndexedDB shows `draftFiles` keys as `<id>:<id>`.
 
+**As built** (chunks 1 and 2 were built together: once drafts have random ids, a file can't find its draft by `get(hash)`, so sessions had to change at the same time)
+- **`drafts/migrate.ts`:**
+  - `migrateDraft` makes a version 1 draft version 2: its document becomes its first source, before any inserted ones.
+  - `migrateFileKey` moves `<id>` to `<id>:<id>`.
+  - 4 tests.
+- **`common/db.ts`:**
+  - Version 3 runs both moves with cursors inside the upgrade transaction, so it's all or nothing.
+  - Moved files land on keys the same cursor reaches later (`hash:hash` sorts after `hash`), and `migrateFileKey` leaves those alone.
+- **`draftStore`:**
+  - `DRAFT_VERSION` 2.
+  - `sources` is required: every PDF the pages use, blank pages aside.
+  - `sourcesUsed(draft)` (the page list's sources, or the first source for old drafts).
+  - `matching(hash)` returns drafts using a file, newest first.
+  - `file(draftId, sourceId)` replaces `pdf(id)`/`source(…)`.
+  - `save(draft, files, drop)`, with no special document PDF.
+
 ### Chunk 2: Sessions open from a page list
 - **`DocSession`:** loses `bytes` and `pdf`; its `id` is the draft id; it keeps `name`. `createSession({ draftId, name, slots, sources, draft? })`.
 - **Opening a file:** one source and its pages. **Opening a draft:** its sources from `draftFiles`, then its pages (the chunk 6 loader of the pages plan, generalised).
@@ -84,6 +100,38 @@ All four go once the draft, not the file, is the anchor.
 - **`assemble`:** the base is any source's pdf.js document (the first slot's).
 - Tabs, Recent and offers still key on what they did, now the draft id, so behaviour doesn't change yet: open the same file and you're still offered its draft.
 - **Your check:** a regression pass of signing, page changes, drafts, tabs and download. Nothing should look different.
+
+**As built**
+- **`DocSession`** has no `bytes`/`pdf`: `id` is the draft id (`newDraftId()`, a random UUID, or the restored draft's). `createSession({ id, name, pages, sources, draft? })`.
+- **`App`:**
+  - `fileSession` (a file: one source, a new draft, the offer).
+  - `draftSession` (a draft: its PDFs via `openDraftSources`, then `restoreDraft`). It starts from every page of the draft's first PDF, which is what old drafts without a page list mean.
+  - `place()`: tab placement and the tabs-off replace, shared by both.
+  - `open()` hashes the file, `openDraft()` reads the draft, and `show()` (tabs after a reload) opens the draft by id.
+- **`DocState`:**
+  - `createDocState(pages)` takes slots.
+  - `pagesChanged` is gone. `singleSource(slots, sources)` (decision 7) decides what to stamp, and `hasChanges(d)` (items, or not exactly one PDF's pages) enables Download and "Downloaded".
+- **`pagesPdf(doc)`** assembles with the first page's source as the base.
+- **Autosave** always saves the page list and every PDF the pages use. Each is written once (`sourcesSaved`, seeded from the restored draft) and dropped when unused. The size is the sum of what's stored.
+- **Came early, inherent to the change:**
+  - **Start over never overwrites** (the fresh session already has its own id). The button's tooltip says the saved work stays.
+  - **Restore** replaces the fresh session with the draft's, in its tab (decision 4).
+  - **The offer** is the newest draft using the file that isn't open in a tab (decision 3, without the banner wording).
+  - **Store only what's used** works: the opened PDF is pruned like any other, so a blank-only draft stores nothing (an autosave test checks it), and `draftSession` copes with no first PDF. Chunk 5 is just its check.
+- **Interim until chunk 3:** opening a file brings forward any tab whose pages use it (close to the old "tab of this file"). Decision 5 replaces it.
+- **Decision 9, partly:** a document's PDFs are inspected when it opens (the file, or all of a draft's), and warnings name the PDF when there are several. PDFs inserted later are refused as before but don't get the digitally-signed warning yet (chunk 3).
+- **Tests:**
+  - `pages.test.ts`: `singleSource`/`hasChanges`, `usedSources` (it replaced `insertedSources`).
+  - `autosave.test.ts`: the whole lifecycle, down to a blank-only draft storing 0 bytes.
+  - `drafts.test.ts`: `sourcesUsed`.
+  - Fixed `tabs.test.ts`, which still checkpointed plain placements since pages chunk 1. `tsc` skips test files, so a one-off typecheck with them included was run as well; it's clean apart from missing `bun:test`/`node:*` declarations.
+- **Verified (no browser):** `just test` (Rust, plus 118 web tests), `just lint`, `just build` and `just wasm-smoke` pass.
+- **Your checks:**
+  1. **Migration:** check out `main` (or `79a4194`), make two drafts (one with page changes, one without), then switch back and load. Both are in Recent and restore fully. DevTools → IndexedDB → pdf-flex is version 3, and `draftFiles` keys are `<id>:<hash>`.
+  2. **Regression:** sign a PDF, close and reopen it, Restore. Insert and delete pages, reload with tabs on (everything comes back), and download.
+  3. **Start over:** open a file with a draft, Start over, change something. Recent now has two drafts of it, and the old one is unchanged.
+  4. **Offer:** with a draft open in a tab, open the same file from disk: that tab comes forward (interim rule).
+  5. **Blank only:** add a blank page, delete every original page, wait for Saved. Recent shows about 0 KB, and reopening from Recent works.
 
 ### Chunk 3: Opening a file: offers, Start over, tabs
 - **On open:** the file's hash goes to `draftStore.matching`, minus drafts open in tabs, giving decision 3's offer.

@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
-import { createDocState, isDirty, snapshotOf } from "../document/docState";
+import { createDocState, isDirty, stateOf } from "../document/docState";
 import { arrangeTabs, docTab, emptyTab, isEmptyTab, pendingTab, saveTabs, savedTabs, tabDocId, tabName, type DocSession } from "./tabs";
 
 test("each document has its own placements, selection and undo history", () => {
-  const a = createDocState([{ width: 612, height: 792 }]);
-  const b = createDocState([{ width: 612, height: 792 }]);
-  a.history.checkpoint(snapshotOf(a));
+  const page = { source: "a", index: 0, width: 612, height: 792 };
+  const a = createDocState([page]);
+  const b = createDocState([page]);
+  a.history.checkpoint(stateOf(a));
   a.setPlacements([{ id: "p0", kind: "image", signatureId: "s", page: 1, x: 0, y: 0, width: 10, height: 10 }]);
   a.setSelection(["p0"]);
   expect(a.placements).toHaveLength(1);

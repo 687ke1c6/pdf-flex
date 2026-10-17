@@ -1,8 +1,10 @@
 // The app's IndexedDB database, shared by the signature library and drafts.
 // Each version's upgrade only adds what it introduced, so older data survives.
+import type { Draft } from "../drafts/draftStore";
+import { migrateDraft, migrateFileKey } from "../drafts/migrate";
 
 const DB_NAME = "pdf-flex";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 /** Object stores, keyed by `id`. */
 export type StoreName = "signatures" | "drafts" | "draftFiles";
@@ -22,6 +24,8 @@ function db(): Promise<IDBDatabase> {
         db.createObjectStore("drafts", { keyPath: "id" });
         db.createObjectStore("draftFiles", { keyPath: "id" });
       }
+      // Version 3: drafts have their own ids and record every PDF they use; each PDF is stored as "<draft id>:<hash>".
+      if (e.oldVersion >= 2 && e.oldVersion < 3) migrateDrafts(request.transaction!);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -37,6 +41,27 @@ function db(): Promise<IDBDatabase> {
   });
   dbPromise = opening;
   return opening;
+}
+
+/** Version 3's upgrade, inside the upgrade transaction (so it's all or nothing). */
+function migrateDrafts(tx: IDBTransaction) {
+  tx.objectStore("drafts").openCursor().onsuccess = (e) => {
+    const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+    if (!cursor) return;
+    cursor.update(migrateDraft(cursor.value as Draft));
+    cursor.continue();
+  };
+  const files = tx.objectStore("draftFiles");
+  files.openCursor().onsuccess = (e) => {
+    const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+    if (!cursor) return;
+    const key = migrateFileKey(String(cursor.key));
+    if (key) {
+      files.put({ ...cursor.value, id: key });
+      cursor.delete();
+    }
+    cursor.continue();
+  };
 }
 
 /** Runs one request in its own transaction and resolves when the transaction commits. */

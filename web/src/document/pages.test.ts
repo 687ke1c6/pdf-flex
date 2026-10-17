@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { createDocState, isDirty, savedKey, stateOf } from "./docState";
+import { createDocState, hasChanges, isDirty, savedKey, stateOf } from "./docState";
 import { createHistory } from "./history";
-import { deletePages, insertedSources, insertSlots, movePages, rearrange, slotsOf, sourcesOf, withoutKeys, type PagesState, type Source } from "./pages";
+import { deletePages, insertSlots, movePages, pagesOf, rearrange, singleSource, slotsOf, sourcesOf, usedSources, withoutKeys, type PagesState, type Source } from "./pages";
 import type { Placement } from "./placement";
 
 const LETTER = { width: 612, height: 792 };
@@ -98,28 +98,43 @@ test("page changes and placements undo and redo together", () => {
   expect(order(state)).toEqual(["other:0", "other:1", "orig:1", "orig:2"]);
 });
 
+/** A source with these pages, as far as the page list cares. */
+const source = (id: string, count: number) => ({ id, name: `${id}.pdf`, pdf: { pages: Array(count).fill(LETTER) } }) as unknown as Source;
+
 test("a document with changed pages is dirty until they're put back", () => {
-  const d = createDocState([LETTER, LETTER], "orig");
+  const d = createDocState(pagesOf(source("orig", 2)));
+  expect(d.slots().map((s) => s.key)).toEqual(["s0", "s1"]);
   expect(isDirty(d)).toBe(false);
-  expect(d.pagesChanged()).toBe(false);
   const before = stateOf(d);
   d.setSlots(deletePages(before, [2])!.slots);
   expect(isDirty(d)).toBe(true);
-  expect(d.pagesChanged()).toBe(true);
-  d.setSlots(movePages(before, [2], 0).slots);
-  expect(d.pagesChanged()).toBe(true);
   d.setSlots(before.slots);
   expect(isDirty(d)).toBe(false);
-  expect(d.pagesChanged()).toBe(false);
   // Pages are compared by what they show, not by their keys.
   expect(savedKey(slotsOf("orig", [LETTER], "x"), [])).toBe(savedKey(slotsOf("orig", [LETTER]), []));
 });
 
-test("a draft keeps the pages without keys, and the inserted PDFs but not the document or blank pages", () => {
+test("one PDF's pages, all of them in order, need no assembling", () => {
+  const orig = source("orig", 2);
+  const sources = new Map([["orig", orig], ["other", source("other", 1)]]);
+  expect(singleSource(slotsOf("orig", [LETTER, LETTER]), sources)).toBe(orig);
+  expect(singleSource(slotsOf("orig", [LETTER]), sources)).toBeUndefined();
+  expect(singleSource(movePages({ slots: slotsOf("orig", [LETTER, LETTER]), placements: [] }, [2], 0).slots, sources)).toBeUndefined();
+  expect(singleSource(slotsOf("other", [LETTER]), sources)?.id).toBe("other");
+  expect(singleSource([...slotsOf("orig", [LETTER, LETTER]), ...slotsOf("other", [LETTER], "o")], sources)).toBeUndefined();
+  expect(singleSource([], sources)).toBeUndefined();
+
+  const d = createDocState(pagesOf(orig));
+  d.sources.set("orig", orig);
+  expect(hasChanges(d)).toBe(false);
+  d.setSlots(slotsOf("orig", [LETTER]));
+  expect(hasChanges(d)).toBe(true);
+});
+
+test("a draft keeps the pages without keys, and every PDF they use but blank pages", () => {
   const slots = [...slotsOf("orig", [LETTER]), ...slotsOf("other", [LETTER, LETTER], "o"), ...slotsOf("blank:612x792", [LETTER], "b"), ...slotsOf("other", [LETTER], "x")];
   expect(withoutKeys(slots)[1]).toEqual({ source: "other", index: 0, width: 612, height: 792 });
   expect(sourcesOf(withoutKeys(slots))).toEqual(["orig", "other", "blank:612x792"]);
-  const other = { id: "other", name: "other.pdf" } as Source;
-  const sources = new Map([["other", other]]);
-  expect(insertedSources(slots, sources, "orig")).toEqual([other]);
+  const [orig, other] = [source("orig", 1), source("other", 2)];
+  expect(usedSources(slots, new Map([["orig", orig], ["other", other]]))).toEqual([orig, other]);
 });

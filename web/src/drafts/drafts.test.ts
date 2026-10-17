@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { documentId } from "../common/db";
-import { formatSavedAt, formatSize, summarize, usablePlacements, type Draft } from "./draftStore";
+import { formatSavedAt, formatSize, sourcesUsed, summarize, usablePlacements, type Draft } from "./draftStore";
 import type { Placement } from "../document/placement";
 
 const draft = (placements: unknown[]): Draft => ({
@@ -11,6 +11,7 @@ const draft = (placements: unknown[]): Draft => ({
   size: 2048,
   placements: placements as Placement[],
   signatures: [],
+  sources: [{ id: "abc", name: "form.pdf" }],
   createdAt: 1,
   savedAt: 2,
 });
@@ -51,4 +52,13 @@ describe("formatting", () => {
     expect(formatSize(820 * 1024)).toBe("820 KB");
     expect(formatSize(3.4 * 1024 * 1024)).toBe("3.4 MB");
   });
+});
+
+test("a draft uses the PDFs its pages come from; without a page list, its first PDF", () => {
+  const page = (source: string) => ({ source, index: 0, width: 612, height: 792 });
+  expect(sourcesUsed(draft([]))).toEqual(["abc"]);
+  const composed = { ...draft([]), pages: [page("b"), page("blank:612x792"), page("b"), page("c")] };
+  expect(sourcesUsed(composed)).toEqual(["b", "blank:612x792", "c"]);
+  // Its first PDF is no longer used once its pages are gone.
+  expect(sourcesUsed(composed)).not.toContain("abc");
 });

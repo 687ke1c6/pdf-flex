@@ -1,22 +1,20 @@
 // Tabs: one per open document (or an empty one, showing the start screen).
-// Each document's session holds everything that belongs to it: the file, its
-// editing state, its draft and autosave, and where it was zoomed and scrolled.
+// Each document's session holds everything that belongs to it: its pages and the
+// PDFs they come from, its editing state, its draft and autosave, and where it
+// was zoomed and scrolled.
 import { createEffect, createRoot, createSignal, on, type Accessor, type Setter } from "solid-js";
 import { createAutosave, type Autosave, type DraftDocument } from "../drafts/autosave";
 import type { Draft } from "../drafts/draftStore";
 import { createDocState, isDirty, savedKey, snapshotOf, type DocState } from "../document/docState";
-import { insertedSources, withoutKeys } from "../document/pages";
+import { usedSources, withoutKeys, type NewSlot, type Source } from "../document/pages";
 import type { Editor } from "../document/editor";
-import type { LoadedPdf } from "../viewer/pdf";
 import type { ScrollPosition } from "../viewer/Viewer";
 
 export interface DocSession {
-  /** The document's identity (SHA-256), as drafts know it. */
+  /** Its draft's id: given when the session is created, or the restored draft's. */
   id: string;
+  /** The name of the file it was started from. */
   name: string;
-  /** The untouched original, which is what gets stamped. */
-  bytes: Uint8Array;
-  pdf: LoadedPdf;
   state: DocState;
   autosave: Autosave;
   zoom: Accessor<number>;
@@ -52,6 +50,9 @@ export const emptyTab = (): Tab => ({ key: nextKey++, session: null });
 export const pendingTab = (id: string, name: string): Tab => ({ key: nextKey++, session: null, pending: { id, name } });
 export const docTab = (session: DocSession): Tab => ({ key: nextKey++, session });
 
+/** A new draft id. */
+export const newDraftId = () => crypto.randomUUID();
+
 /** Whether a tab has no document (it shows the start screen). */
 export const isEmptyTab = (tab: Tab) => !tab.session && !tab.pending;
 
@@ -74,28 +75,30 @@ export const tabDocId = (tab: Tab) => tab.session?.id ?? tab.pending?.id;
 export const tabName = (tab: Tab) => tab.session?.name ?? tab.pending?.name ?? "New tab";
 
 /**
- * A session for an opened PDF, with its own reactive scope: its autosave keeps
- * running while other tabs are in front, and `dispose` ends it.
+ * A session for a document: `pages` from `sources` (all already open). With
+ * `draft`, it continues that draft (same id; its PDFs are already stored).
+ * It has its own reactive scope: its autosave keeps running while other tabs
+ * are in front, and `dispose` ends it.
  */
-export function createSession(init: { id: string; name: string; bytes: Uint8Array; pdf: LoadedPdf; draft?: Draft }, editor: Editor): DocSession {
+export function createSession(
+  init: { id: string; name: string; pages: NewSlot[]; sources: Source[]; draft?: Draft },
+  editor: Editor,
+): DocSession {
   return createRoot((disposeRoot) => {
-    const state = createDocState(init.pdf.pages, init.id);
-    state.sources.set(init.id, { id: init.id, name: init.name, bytes: init.bytes, pdf: init.pdf });
+    const state = createDocState(init.pages);
+    for (const source of init.sources) state.sources.set(source.id, source);
     const draftDoc: DraftDocument = {
       id: init.id,
       name: init.name,
-      bytes: init.bytes,
-      pageCount: init.pdf.pages.length,
       createdAt: init.draft?.createdAt ?? Date.now(),
-      fileSaved: !!init.draft,
-      sourcesSaved: new Set(init.draft?.sources?.map((s) => s.id)),
+      sourcesSaved: new Set(init.draft?.sources.map((s) => s.id)),
     };
     const autosave = createAutosave(draftDoc, {
       version: () => savedKey(state.slots(), state.placements),
       placements: () => snapshotOf(state),
       signatures: () => editor.usedSignatures(state),
-      pages: () => (state.pagesChanged() ? withoutKeys(state.slots()) : undefined),
-      sources: () => insertedSources(state.slots(), state.sources, init.id),
+      pages: () => withoutKeys(state.slots()),
+      sources: () => usedSources(state.slots(), state.sources),
     });
     const [zoom, setZoom] = createSignal(1);
     const [page, setPage] = createSignal(1);
@@ -103,11 +106,11 @@ export function createSession(init: { id: string; name: string; bytes: Uint8Arra
     const [warning, setWarning] = createSignal("");
     const [saving, setSaving] = createSignal(false);
 
-    // Starting work while a draft is on offer means starting over.
+    // Starting work while a draft is on offer means starting over (the offered draft stays as it is).
     createEffect(
       on(
         () => savedKey(state.slots(), state.placements),
-        () => offer() && (state.placements.length || state.pagesChanged()) && setOffer(null),
+        () => offer() && isDirty(state) && setOffer(null),
         { defer: true },
       ),
     );
@@ -115,8 +118,6 @@ export function createSession(init: { id: string; name: string; bytes: Uint8Arra
     return {
       id: init.id,
       name: init.name,
-      bytes: init.bytes,
-      pdf: init.pdf,
       state,
       autosave,
       zoom,

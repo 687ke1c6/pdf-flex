@@ -2,7 +2,7 @@
 // docs/pages-plan.md §2). The result is then stamped like any opened PDF.
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { DocState } from "../document/docState";
-import type { Slot } from "../document/pages";
+import { singleSource, type Slot } from "../document/pages";
 import { inspectPdf, sameLayout } from "./stamper";
 
 /** Consecutive pages of one source, in ascending order: one extractPages entry. */
@@ -47,17 +47,18 @@ export async function assemble(
 }
 
 /**
- * The PDF to stamp a document's placements onto: the original as it is, or,
- * if its pages have changed, those pages assembled into a new PDF and checked.
- * Rejects with a user-facing message if they can't be put together as shown.
+ * The PDF to stamp a document's placements onto: a PDF as it is, if the pages
+ * are exactly its pages; otherwise the pages assembled into a new PDF and
+ * checked. Rejects with a user-facing message if they can't be put together as shown.
  */
-export async function pagesPdf(doc: DocState, originalId: string): Promise<Uint8Array> {
-  const original = doc.sources.get(originalId)!;
-  if (!doc.pagesChanged()) return original.bytes;
+export async function pagesPdf(doc: DocState): Promise<Uint8Array> {
   const slots = doc.slots();
+  const whole = singleSource(slots, doc.sources);
+  if (whole) return whole.bytes;
+  const base = doc.sources.get(slots[0].source)!;
   let out: Uint8Array;
   try {
-    out = await assemble(original.pdf.doc, originalId, slots, (id) => doc.sources.get(id)!.bytes);
+    out = await assemble(base.pdf.doc, base.id, slots, (id) => doc.sources.get(id)!.bytes);
   } catch (err) {
     throw new Error(`The pages couldn't be put together (${err instanceof Error ? err.message : err}).`);
   }

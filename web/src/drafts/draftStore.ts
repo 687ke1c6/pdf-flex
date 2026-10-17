@@ -1,30 +1,31 @@
-// Drafts: work in progress on a document, kept in this browser until discarded.
-// A draft is keyed by its document's hash (see `documentId`), so opening the
-// same file again finds it. Its PDF is stored separately and written once, and
-// so is each PDF its pages were inserted from (keyed `<draft id>:<source id>`).
+// Drafts: work in progress, kept in this browser until discarded. A draft has
+// its own id and records the PDFs its pages come from by their hash (see
+// `documentId`), so opening a file finds the drafts that use it. Each of those
+// PDFs is stored with the draft, keyed `<draft id>:<source id>`, and written once.
 import { run, runAll } from "../common/db";
 import type { NewSlot } from "../document/pages";
 import type { Placement } from "../document/placement";
 import type { StoredSignature } from "../signatures/signatureStore";
 
-/** Bumped when a draft's shape changes incompatibly. */
-export const DRAFT_VERSION = 1;
+/** Bumped when a draft's shape changes incompatibly (and old drafts migrated: see migrate.ts). */
+export const DRAFT_VERSION = 2;
 
 export interface Draft {
-  /** The document's SHA-256. */
+  /** Its own id, given when its session was created. (Drafts from version 1 keep their document's hash.) */
   id: string;
   version: number;
+  /** The name of the file it was started from. */
   name: string;
   pageCount: number;
-  /** Size in bytes of the PDFs stored with it: the document's, and those its pages were inserted from. */
+  /** Size in bytes of the PDFs stored with it. */
   size: number;
   placements: Placement[];
   /** Copies of the signatures its placements use, so it restores even if they're deleted from the library. */
   signatures: StoredSignature[];
-  /** The page list, if the pages were changed; absent, the PDF's own pages. */
+  /** The page list. Absent in drafts from version 1 without page changes: every page of the first source. */
   pages?: NewSlot[];
-  /** The PDFs pages were inserted from (blank pages aside), whose files are stored with the draft. */
-  sources?: { id: string; name: string }[];
+  /** Every PDF its pages come from (blank pages aside), by hash, in order of first use. */
+  sources: { id: string; name: string }[];
   createdAt: number;
   savedAt: number;
 }
@@ -62,7 +63,10 @@ const KINDS = new Set<string>(["image", "text", "shape"] satisfies Placement["ki
  */
 export const usablePlacements = (d: Draft): Placement[] => d.placements.filter((p) => KINDS.has(p.kind));
 
-/** Where a PDF that a draft's pages were inserted from is stored. */
+/** The ids of the PDFs a draft's pages use. */
+export const sourcesUsed = (d: Draft): string[] => (d.pages ? [...new Set(d.pages.map((p) => p.source))] : d.sources.slice(0, 1).map((s) => s.id));
+
+/** Where a PDF a draft uses is stored. */
 const fileKey = (draftId: string, sourceId: string) => `${draftId}:${sourceId}`;
 
 export const draftStore = {
@@ -74,38 +78,34 @@ export const draftStore = {
     return all.map(summarize).sort((a, b) => b.savedAt - a.savedAt);
   },
 
-  /** The draft's original PDF. */
-  async pdf(id: string): Promise<Uint8Array | undefined> {
-    const file = await run<DraftFile | undefined>("draftFiles", "readonly", (s) => s.get(id));
-    return file && new Uint8Array(await file.pdf.arrayBuffer());
+  /** The drafts whose pages use a PDF (by hash), most recently saved first. */
+  async matching(sourceId: string): Promise<Draft[]> {
+    const all = await run<Draft[]>("drafts", "readonly", (s) => s.getAll());
+    return all.filter((d) => sourcesUsed(d).includes(sourceId)).sort((a, b) => b.savedAt - a.savedAt);
   },
 
-  /** A PDF the draft's pages were inserted from. */
-  async source(draftId: string, sourceId: string): Promise<Uint8Array | undefined> {
+  /** A PDF a draft uses, as stored with it. */
+  async file(draftId: string, sourceId: string): Promise<Uint8Array | undefined> {
     const file = await run<DraftFile | undefined>("draftFiles", "readonly", (s) => s.get(fileKey(draftId, sourceId)));
     return file && new Uint8Array(await file.pdf.arrayBuffer());
   },
 
   /**
-   * Saves a draft, its PDF when given (only needed the first time), and the PDFs
-   * pages were inserted from in `sources` (each only needed once). Stored
-   * inserted PDFs in `drop` (by source id) are deleted: no page uses them any more.
+   * Saves a draft and the PDFs in `files` (each only needs writing once). Stored
+   * PDFs in `drop` (by source id) are deleted: no page uses them any more.
    */
-  save: (draft: Draft, pdf?: Uint8Array, sources: { id: string; bytes: Uint8Array }[] = [], drop: string[] = []) =>
+  save: (draft: Draft, files: { id: string; bytes: Uint8Array }[] = [], drop: string[] = []) =>
     runAll(["drafts", "draftFiles"], (tx) => {
       tx.objectStore("drafts").put(draft);
-      const files = tx.objectStore("draftFiles");
-      const blob = (bytes: Uint8Array) => new Blob([bytes as Uint8Array<ArrayBuffer>]);
-      if (pdf) files.put({ id: draft.id, pdf: blob(pdf) } satisfies DraftFile);
-      for (const s of sources) files.put({ id: fileKey(draft.id, s.id), pdf: blob(s.bytes) } satisfies DraftFile);
-      for (const id of drop) files.delete(fileKey(draft.id, id));
+      const store = tx.objectStore("draftFiles");
+      for (const f of files) store.put({ id: fileKey(draft.id, f.id), pdf: new Blob([f.bytes as Uint8Array<ArrayBuffer>]) } satisfies DraftFile);
+      for (const id of drop) store.delete(fileKey(draft.id, id));
     }),
 
   remove: (id: string) =>
     runAll(["drafts", "draftFiles"], (tx) => {
       tx.objectStore("drafts").delete(id);
-      tx.objectStore("draftFiles").delete(id);
-      // The PDFs its pages were inserted from: every key "<id>:…".
+      // Its PDFs: every key "<id>:…".
       tx.objectStore("draftFiles").delete(IDBKeyRange.bound(fileKey(id, ""), fileKey(id, "\uffff")));
     }),
 };

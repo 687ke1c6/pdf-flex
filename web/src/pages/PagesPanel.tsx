@@ -3,7 +3,7 @@
 // between them. See docs/pages-plan.md.
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "../document/editor";
-import type { NewSlot, Slot, Source } from "../document/pages";
+import { pagesOf, type Slot, type Source } from "../document/pages";
 import type { PageSize } from "../viewer/pdf";
 import { InsertDialog } from "./InsertDialog";
 import { PageRangeDialog } from "./PageRangeDialog";
@@ -18,8 +18,6 @@ interface Props {
   onError(message: string): void;
 }
 
-const pagesOf = (source: Source): NewSlot[] =>
-  source.pdf.pages.map(({ width, height }, index) => ({ source: source.id, index, width, height }));
 
 /** A page size as people know it: "Letter", "A4 landscape", or points. */
 function sizeName({ width, height }: PageSize): string {

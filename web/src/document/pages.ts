@@ -40,9 +40,23 @@ export const withoutKeys = (slots: Slot[]): NewSlot[] => slots.map(({ key: _key,
 /** The sources pages come from, each once, in order of first use. */
 export const sourcesOf = (pages: NewSlot[]): string[] => [...new Set(pages.map((p) => p.source))];
 
-/** The PDFs pages were inserted from (not the document itself, not blank pages): what a draft stores besides the document. */
-export const insertedSources = (slots: Slot[], sources: Map<string, Source>, documentId: string): Source[] =>
-  sourcesOf(slots).flatMap((id) => (id === documentId || isBlankSource(id) ? [] : [sources.get(id)!]));
+/** The PDFs the pages come from, blank pages aside: what a draft stores. */
+export const usedSources = (slots: Slot[], sources: Map<string, Source>): Source[] =>
+  sourcesOf(slots).flatMap((id) => (isBlankSource(id) ? [] : [sources.get(id)!]));
+
+/**
+ * The source whose pages these are, all of them in order, if there is one: then
+ * that PDF can be stamped as it is, with nothing to assemble.
+ */
+export function singleSource(slots: Slot[], sources: Map<string, Source>): Source | undefined {
+  const source = slots.length ? sources.get(slots[0].source) : undefined;
+  if (!source || slots.length !== source.pdf.pages.length) return undefined;
+  return slots.every((s, i) => s.source === source.id && s.index === i) ? source : undefined;
+}
+
+/** Every page of a source, in order. */
+export const pagesOf = (source: Pick<Source, "id" | "pdf">): NewSlot[] =>
+  source.pdf.pages.map(({ width, height }, index) => ({ source: source.id, index, width, height }));
 
 /** A source's pages as slots, in order, keyed `${prefix}0`, `${prefix}1`, …. */
 export const slotsOf = (source: string, pages: PageSize[], prefix = "s"): Slot[] =>

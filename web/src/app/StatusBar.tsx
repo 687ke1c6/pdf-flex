@@ -4,6 +4,7 @@ import { createSignal, For, Match, onCleanup, Show, Switch, type JSX } from "sol
 import { draftsEnabled, type AutosaveState } from "../drafts/autosave";
 import { formatSavedAt } from "../drafts/draftStore";
 import { CogIcon } from "./SettingsDialog";
+import { hasChanges } from "../document/docState";
 import { useEditor } from "../document/editor";
 import type { Placement } from "../document/placement";
 import { isSymbol, type ShapeKind } from "../shapes/shapes";
@@ -69,7 +70,7 @@ export function StatusBar(props: Props) {
 
   const count = () => editor.placements.length;
   /** There's something to download: placed items, or changed pages. */
-  const edited = () => count() > 0 || editor.doc().pagesChanged();
+  const edited = () => hasChanges(editor.doc());
 
   const hint = () => {
     if (editor.editing()) return "Escape or click elsewhere to finish editing";

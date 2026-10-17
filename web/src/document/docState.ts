@@ -3,8 +3,7 @@
 import { createSignal, type Accessor, type Setter } from "solid-js";
 import { createStore, unwrap, type SetStoreFunction } from "solid-js/store";
 import { createHistory, type History } from "./history";
-import type { PageSize } from "../viewer/pdf";
-import { slotsOf, type PagesState, type Slot, type Source } from "./pages";
+import { singleSource, type NewSlot, type PagesState, type Slot, type Source } from "./pages";
 import type { Placement } from "./placement";
 
 /** An in-place text edit in progress. It becomes one undo step when it ends. */
@@ -34,8 +33,6 @@ export interface DocState {
   /** The page list (see pages.ts). Its sizes are what placements are kept within. */
   slots: Accessor<Slot[]>;
   setSlots: Setter<Slot[]>;
-  /** Whether the pages differ from the PDF as opened (so they must be assembled to download). */
-  pagesChanged: Accessor<boolean>;
   /**
    * The PDFs the slots come from, by id. Only ever added to (an undo can bring a
    * page back), and added before any slot refers to them; closed with the document.
@@ -51,11 +48,10 @@ export interface DocState {
   setSavedState: Setter<string>;
 }
 
-/** A fresh document state for a PDF with these pages; `source` is its id. */
-export function createDocState(pages: PageSize[], source = ""): DocState {
+/** A fresh document state with these pages (their sources are added to `sources` by the caller). */
+export function createDocState(pages: NewSlot[] = []): DocState {
   const [placements, setPlacements] = createStore<Placement[]>([]);
-  const [slots, setSlots] = createSignal(slotsOf(source, pages));
-  const opened = savedKey(slots(), []);
+  const [slots, setSlots] = createSignal<Slot[]>(pages.map((p, i) => ({ ...p, key: `s${i}` })));
   const [selection, setSelection] = createSignal<string[]>([]);
   const [editing, setEditing] = createSignal<string | null>(null);
   const [historyVersion, setHistoryVersion] = createSignal(0);
@@ -70,7 +66,6 @@ export function createDocState(pages: PageSize[], source = ""): DocState {
     session: undefined,
     slots,
     setSlots,
-    pagesChanged: () => savedKey(slots(), []) !== opened,
     sources: new Map(),
     nextPlacementId: 0,
     nextSlotKey: pages.length,
@@ -90,6 +85,9 @@ export const stateOf = (d: DocState): PagesState => ({ slots: d.slots(), placeme
 /** What `isDirty` compares: the pages (by what they show, not their keys) and the placements. */
 export const savedKey = (slots: Slot[], placements: readonly Placement[]) =>
   JSON.stringify([slots.map((s) => [s.source, s.index]), placements]);
+
+/** Whether there's anything to download: placed items, or pages that aren't just one PDF's as it is. */
+export const hasChanges = (d: DocState) => d.placements.length > 0 || !singleSource(d.slots(), d.sources);
 
 /** Whether a document has changes (pages or placements) that haven't been downloaded. */
 export const isDirty = (d: DocState) => savedKey(d.slots(), d.placements) !== d.savedState();

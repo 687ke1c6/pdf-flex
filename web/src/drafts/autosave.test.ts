@@ -9,12 +9,9 @@ beforeEach(() => jest.useFakeTimers());
 afterEach(() => jest.useRealTimers());
 
 const document = (): DraftDocument => ({
-  id: "abc",
+  id: "draft-1",
   name: "abc.pdf",
-  bytes: new Uint8Array(4),
-  pageCount: 1,
   createdAt: 0,
-  fileSaved: true,
 });
 
 /** Lets pending promise callbacks run. */
@@ -249,16 +246,18 @@ test("turning drafts back on saves what changed while they were off", async () =
   }
 });
 
-test("changed pages are saved with the draft, each inserted PDF is written once and removed when unused", async () => {
+test("the page list and every PDF it uses are saved; each PDF is written once, and removed when unused", async () => {
   const [version, edit] = createSignal("v0");
-  const [pages, setPages] = createSignal<NewSlot[] | undefined>(undefined);
-  const saves: { draft: Draft; sources: string[]; drop: string[] }[] = [];
+  const abc = { id: "abc", name: "abc.pdf", bytes: new Uint8Array(4) };
+  const other = { id: "other", name: "other.pdf", bytes: new Uint8Array(2) };
+  const page = (source: string): NewSlot => ({ source, index: 0, width: 612, height: 792 });
+  const [pages, setPages] = createSignal<NewSlot[]>([page("abc")]);
+  const saves: { draft: Draft; files: string[]; drop: string[] }[] = [];
   const store = {
-    save: async (draft: Draft, _pdf?: Uint8Array, sources: { id: string }[] = [], drop: string[] = []) => {
-      saves.push({ draft, sources: sources.map((s) => s.id), drop });
+    save: async (draft: Draft, files: { id: string }[] = [], drop: string[] = []) => {
+      saves.push({ draft, files: files.map((f) => f.id), drop });
     },
   };
-  const other = { id: "other", name: "other.pdf", bytes: new Uint8Array(2) };
   const autosave = createRoot(() =>
     createAutosave(
       document(),
@@ -267,46 +266,51 @@ test("changed pages are saved with the draft, each inserted PDF is written once 
         placements: () => [],
         signatures: () => [],
         pages,
-        sources: () => (pages()?.some((p) => p.source === "other") ? [other] : []),
+        sources: () => [abc, other].filter((s) => pages().some((p) => p.source === s.id)),
       },
       store,
     ),
   );
-  const page = (source: string): NewSlot => ({ source, index: 0, width: 612, height: 792 });
+  const save = async (v: string) => {
+    edit(v);
+    jest.advanceTimersByTime(SAVE_DELAY_MS);
+    await settle();
+    return saves.at(-1)!;
+  };
 
   setPages([page("abc"), page("other")]);
-  edit("v1");
-  jest.advanceTimersByTime(SAVE_DELAY_MS);
-  await settle();
-  expect(saves[0].draft.pages).toEqual([page("abc"), page("other")]);
-  expect(saves[0].draft.sources).toEqual([{ id: "other", name: "other.pdf" }]);
-  expect(saves[0].draft.pageCount).toBe(2);
-  expect(saves[0].sources).toEqual(["other"]);
-  // The document's 4 bytes and the inserted PDF's 2.
-  expect(saves[0].draft.size).toBe(6);
+  let s = await save("v1");
+  expect(s.draft.id).toBe("draft-1");
+  expect(s.draft.pages).toEqual([page("abc"), page("other")]);
+  expect(s.draft.sources).toEqual([
+    { id: "abc", name: "abc.pdf" },
+    { id: "other", name: "other.pdf" },
+  ]);
+  expect(s.draft.pageCount).toBe(2);
+  expect(s.draft.size).toBe(6);
+  expect(s.files).toEqual(["abc", "other"]);
 
-  edit("v2");
-  jest.advanceTimersByTime(SAVE_DELAY_MS);
-  await settle();
   // Already stored: not written again.
-  expect(saves[1].sources).toEqual([]);
+  s = await save("v2");
+  expect(s.files).toEqual([]);
 
-  // Pages back as opened: the draft has no page list.
-  setPages(undefined);
-  edit("v3");
-  jest.advanceTimersByTime(SAVE_DELAY_MS);
-  await settle();
-  expect(saves[2].draft.pages).toBeUndefined();
-  expect(saves[2].draft.pageCount).toBe(1);
-  expect(saves[2].draft.size).toBe(4);
-  expect(saves[2].drop).toEqual(["other"]);
+  // No page uses "other" any more: removed, and the size follows.
+  setPages([page("abc")]);
+  s = await save("v3");
+  expect(s.draft.sources).toEqual([{ id: "abc", name: "abc.pdf" }]);
+  expect(s.draft.size).toBe(4);
+  expect(s.drop).toEqual(["other"]);
 
-  // Its pages back (an undo): written again, and nothing to remove.
+  // Its page back (an undo): written again, and nothing to remove.
   setPages([page("abc"), page("other")]);
-  edit("v4");
-  jest.advanceTimersByTime(SAVE_DELAY_MS);
-  await settle();
-  expect(saves[3].sources).toEqual(["other"]);
-  expect(saves[3].drop).toEqual([]);
+  s = await save("v4");
+  expect(s.files).toEqual(["other"]);
+  expect(s.drop).toEqual([]);
+
+  // Only a blank page left: nothing is stored.
+  setPages([page("blank:612x792")]);
+  s = await save("v5");
+  expect(s.draft.size).toBe(0);
+  expect(s.drop.sort()).toEqual(["abc", "other"]);
   expect(autosave.upToDate()).toBe(true);
 });
