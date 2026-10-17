@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, jest, test } from "bun:test";
 import { createRoot, createSignal } from "solid-js";
 import { FLUSH_LIMIT_MS, SAVE_DELAY_MS, createAutosave, setDraftsEnabled, type DraftDocument } from "./autosave";
 import type { Draft } from "./draftStore";
+import type { NewSlot } from "../document/pages";
 import type { Placement } from "../document/placement";
 
 beforeEach(() => jest.useFakeTimers());
@@ -246,4 +247,54 @@ test("turning drafts back on saves what changed while they were off", async () =
   } finally {
     setDraftsEnabled(true);
   }
+});
+
+test("changed pages are saved with the draft, and each inserted PDF is written once", async () => {
+  const [version, edit] = createSignal("v0");
+  const [pages, setPages] = createSignal<NewSlot[] | undefined>(undefined);
+  const saves: { draft: Draft; sources: string[] }[] = [];
+  const store = {
+    save: async (draft: Draft, _pdf?: Uint8Array, sources: { id: string }[] = []) => {
+      saves.push({ draft, sources: sources.map((s) => s.id) });
+    },
+  };
+  const other = { id: "other", name: "other.pdf", bytes: new Uint8Array(2) };
+  const autosave = createRoot(() =>
+    createAutosave(
+      document(),
+      {
+        version,
+        placements: () => [],
+        signatures: () => [],
+        pages,
+        sources: () => (pages()?.some((p) => p.source === "other") ? [other] : []),
+      },
+      store,
+    ),
+  );
+  const page = (source: string): NewSlot => ({ source, index: 0, width: 612, height: 792 });
+
+  setPages([page("abc"), page("other")]);
+  edit("v1");
+  jest.advanceTimersByTime(SAVE_DELAY_MS);
+  await settle();
+  expect(saves[0].draft.pages).toEqual([page("abc"), page("other")]);
+  expect(saves[0].draft.sources).toEqual([{ id: "other", name: "other.pdf" }]);
+  expect(saves[0].draft.pageCount).toBe(2);
+  expect(saves[0].sources).toEqual(["other"]);
+
+  edit("v2");
+  jest.advanceTimersByTime(SAVE_DELAY_MS);
+  await settle();
+  // Already stored: not written again.
+  expect(saves[1].sources).toEqual([]);
+
+  // Pages back as opened: the draft has no page list.
+  setPages(undefined);
+  edit("v3");
+  jest.advanceTimersByTime(SAVE_DELAY_MS);
+  await settle();
+  expect(saves[2].draft.pages).toBeUndefined();
+  expect(saves[2].draft.pageCount).toBe(1);
+  expect(autosave.upToDate()).toBe(true);
 });

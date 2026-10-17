@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createDocState, isDirty, savedKey, stateOf } from "./docState";
 import { createHistory } from "./history";
-import { deletePages, insertSlots, movePages, rearrange, slotsOf, type PagesState } from "./pages";
+import { deletePages, insertedSources, insertSlots, movePages, rearrange, slotsOf, sourcesOf, withoutKeys, type PagesState, type Source } from "./pages";
 import type { Placement } from "./placement";
 
 const LETTER = { width: 612, height: 792 };
@@ -113,4 +113,13 @@ test("a document with changed pages is dirty until they're put back", () => {
   expect(d.pagesChanged()).toBe(false);
   // Pages are compared by what they show, not by their keys.
   expect(savedKey(slotsOf("orig", [LETTER], "x"), [])).toBe(savedKey(slotsOf("orig", [LETTER]), []));
+});
+
+test("a draft keeps the pages without keys, and the inserted PDFs but not the document or blank pages", () => {
+  const slots = [...slotsOf("orig", [LETTER]), ...slotsOf("other", [LETTER, LETTER], "o"), ...slotsOf("blank:612x792", [LETTER], "b"), ...slotsOf("other", [LETTER], "x")];
+  expect(withoutKeys(slots)[1]).toEqual({ source: "other", index: 0, width: 612, height: 792 });
+  expect(sourcesOf(withoutKeys(slots))).toEqual(["orig", "other", "blank:612x792"]);
+  const other = { id: "other", name: "other.pdf" } as Source;
+  const sources = new Map([["other", other]]);
+  expect(insertedSources(slots, sources, "orig")).toEqual([other]);
 });

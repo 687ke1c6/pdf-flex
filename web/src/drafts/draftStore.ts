@@ -1,7 +1,9 @@
 // Drafts: work in progress on a document, kept in this browser until discarded.
 // A draft is keyed by its document's hash (see `documentId`), so opening the
-// same file again finds it. Its PDF is stored separately and written once.
+// same file again finds it. Its PDF is stored separately and written once, and
+// so is each PDF its pages were inserted from (keyed `<draft id>:<source id>`).
 import { run, runAll } from "../common/db";
+import type { NewSlot } from "../document/pages";
 import type { Placement } from "../document/placement";
 import type { StoredSignature } from "../signatures/signatureStore";
 
@@ -19,6 +21,10 @@ export interface Draft {
   placements: Placement[];
   /** Copies of the signatures its placements use, so it restores even if they're deleted from the library. */
   signatures: StoredSignature[];
+  /** The page list, if the pages were changed; absent, the PDF's own pages. */
+  pages?: NewSlot[];
+  /** The PDFs pages were inserted from (blank pages aside), whose files are stored with the draft. */
+  sources?: { id: string; name: string }[];
   createdAt: number;
   savedAt: number;
 }
@@ -56,6 +62,9 @@ const KINDS = new Set<string>(["image", "text", "shape"] satisfies Placement["ki
  */
 export const usablePlacements = (d: Draft): Placement[] => d.placements.filter((p) => KINDS.has(p.kind));
 
+/** Where a PDF that a draft's pages were inserted from is stored. */
+const fileKey = (draftId: string, sourceId: string) => `${draftId}:${sourceId}`;
+
 export const draftStore = {
   get: (id: string) => run<Draft | undefined>("drafts", "readonly", (s) => s.get(id)),
 
@@ -71,17 +80,31 @@ export const draftStore = {
     return file && new Uint8Array(await file.pdf.arrayBuffer());
   },
 
-  /** Saves a draft, and its PDF when given (only needed the first time). */
-  save: (draft: Draft, pdf?: Uint8Array) =>
+  /** A PDF the draft's pages were inserted from. */
+  async source(draftId: string, sourceId: string): Promise<Uint8Array | undefined> {
+    const file = await run<DraftFile | undefined>("draftFiles", "readonly", (s) => s.get(fileKey(draftId, sourceId)));
+    return file && new Uint8Array(await file.pdf.arrayBuffer());
+  },
+
+  /**
+   * Saves a draft, its PDF when given (only needed the first time), and the PDFs
+   * pages were inserted from in `sources` (each only needed once).
+   */
+  save: (draft: Draft, pdf?: Uint8Array, sources: { id: string; bytes: Uint8Array }[] = []) =>
     runAll(["drafts", "draftFiles"], (tx) => {
       tx.objectStore("drafts").put(draft);
-      if (pdf) tx.objectStore("draftFiles").put({ id: draft.id, pdf: new Blob([pdf as Uint8Array<ArrayBuffer>]) } satisfies DraftFile);
+      const files = tx.objectStore("draftFiles");
+      const blob = (bytes: Uint8Array) => new Blob([bytes as Uint8Array<ArrayBuffer>]);
+      if (pdf) files.put({ id: draft.id, pdf: blob(pdf) } satisfies DraftFile);
+      for (const s of sources) files.put({ id: fileKey(draft.id, s.id), pdf: blob(s.bytes) } satisfies DraftFile);
     }),
 
   remove: (id: string) =>
     runAll(["drafts", "draftFiles"], (tx) => {
       tx.objectStore("drafts").delete(id);
       tx.objectStore("draftFiles").delete(id);
+      // The PDFs its pages were inserted from: every key "<id>:…".
+      tx.objectStore("draftFiles").delete(IDBKeyRange.bound(fileKey(id, ""), fileKey(id, "\uffff")));
     }),
 };
 

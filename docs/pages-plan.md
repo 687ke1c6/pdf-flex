@@ -99,8 +99,8 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 | 4 | Pages panel: delete and blank page | Delete and add blank pages from the panel, undo them, download | ✅ (pending your check) |
 | 5 | Insert from another PDF | Insert all or some pages of another PDF anywhere, by button or drop | ✅ (pending your check) |
 | 5b | Insert dialog and thumbnail size | ＋ opens a dialog (blank page, or choose/drop a PDF); two thumbnail sizes | ✅ (pending your check) |
-| 6 | Drafts | Reloading restores inserted and deleted pages | 🔜 |
-| 7 | Spike review | Decide: flag off and ship, adjust, or switch to option B | ⬜ |
+| 6 | Drafts | Reloading restores inserted and deleted pages | ✅ (pending your check) |
+| 7 | Spike review | Decide: flag off and ship, adjust, or switch to option B | 🔜 |
 
 ### Chunk 0: Feature flag
 - `web/src/common/flags.ts`: `flag("pages")`, switched from an "Experimental" section in Settings and remembered in `localStorage` (wrapped in try/catch).
@@ -320,6 +320,30 @@ UX changes after trying chunks 4–5.
 - The draft gains optional `sources` (ids and names) and `slots`. The inserted PDFs go into `draftFiles` under their hash.
 - Discarding a draft deletes source files that no other draft uses.
 - **Your check:** insert and delete pages, reload, restore the draft. Everything is back, including items on inserted pages.
+
+**As built**
+- **`Draft`** gains optional `pages` (the page list without keys, only when the pages were changed) and `sources` (`{ id, name }` of inserted PDFs). `DRAFT_VERSION` stays 1: the fields are additive and old drafts load as before.
+- **Inserted PDFs** are stored in `draftFiles` under `<draft id>:<source id>`: one copy per draft, so there's no reference counting. Discarding a draft deletes them with a key range. Blank pages (`blank:WxH`) are never stored; they're made again. (Changed from the plan's "shared, deleted when no other draft uses them": simpler, at the cost of a duplicate if two drafts insert the same PDF.)
+- **Autosave:**
+  - The version is `savedKey(slots, placements)`, so page changes are saved like any other change.
+  - It writes `pages`, `sources` and the current page count (the Recent list shows it).
+  - Each inserted PDF is written once per draft (`sourcesSaved`, seeded from the draft when one is restored).
+- **Restore** (`pages/draftPages.ts`, `openDraftSources`):
+  - Opens each source of the draft's pages into the document (from `draftFiles`, or a new blank page).
+  - `editor.restoreDraft(…, pages)` gives the pages new keys and puts them back, with placements remapped by `rearrange`. Pages whose PDF couldn't be read are left out with their items, and a message names the PDF.
+  - A draft with only page changes is offered too, and the banner says "pages changed". Starting work (a page change counts) dismisses the offer.
+- **Pure helpers in `document/pages.ts`:** `withoutKeys`, `sourcesOf`, `insertedSources`. They live there because the session code that uses them is unit-tested and can't import pdf.js's Vite-only worker URL.
+- **Closes the chunk 2 gap** (drafts didn't know about pages).
+- **Tests:** 1 new in `pages.test.ts` (what a draft keeps) and 1 in `autosave.test.ts` (pages saved, page count, each inserted PDF written once, no page list once pages are back as opened).
+- **Verified (no browser):** `just test` (Rust, plus 112 web tests), `just lint` and `just build` pass.
+- **Your checks** (flag on):
+  1. Insert a PDF, add a blank page, delete an original page, and place items on an inserted and a blank page. Wait for "Saved", reload: with tabs, the document comes back with everything. Without tabs, reopen it from Recent and everything is back.
+  2. Open the original file again (drag it in): the offer says "(N items, pages changed)". Restore brings the pages and items back; Start over then a change discards it.
+  3. Change only pages (no items), reload: still offered and restored.
+  4. Recent shows the current page count.
+  5. Download a restored draft: pages in order, items where placed.
+  6. Discard the draft from Recent. In DevTools → Application → IndexedDB → pdf-flex → draftFiles, its `<id>:…` entries are gone too.
+  7. Flag off, reopen a draft that has page changes: the pages are still restored (the viewer and download don't depend on the flag).
 
 ### Chunk 7: Spike review
 - Measure memory with a few large inserted PDFs, and download time on `out/many-pages.pdf` plus inserts.

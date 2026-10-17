@@ -1,6 +1,7 @@
 // Autosave: keeps a draft of the open document in this browser as you work.
 import { batch, createEffect, createMemo, createSignal, on, untrack } from "solid-js";
 import { DRAFT_VERSION, draftStore } from "./draftStore";
+import type { NewSlot } from "../document/pages";
 import type { Placement } from "../document/placement";
 import type { StoredSignature } from "../signatures/signatureStore";
 
@@ -41,6 +42,8 @@ export interface DraftDocument {
   createdAt: number;
   /** Its PDF is already in storage (it only needs writing once). */
   fileSaved: boolean;
+  /** The PDFs inserted into it that are already in storage, by id (each only needs writing once). */
+  sourcesSaved?: Set<string>;
 }
 
 export type AutosaveState =
@@ -50,10 +53,14 @@ export type AutosaveState =
   | { status: "error"; message: string };
 
 interface Source {
-  /** The placements, serialised: changes to it are what get saved. Tracked. */
+  /** The pages and placements, serialised: changes to it are what get saved. Tracked. */
   version(): string;
   placements(): Placement[];
   signatures(): StoredSignature[];
+  /** The page list, if the pages were changed. */
+  pages?(): NewSlot[] | undefined;
+  /** The PDFs the pages were inserted from (blank pages aside). */
+  sources?(): { id: string; name: string; bytes: Uint8Array }[];
 }
 
 /** Keeps `doc`'s draft up to date. Each open document has its own. */
@@ -106,6 +113,9 @@ export function createAutosave(doc: DraftDocument, source: Source, store: Pick<t
   async function write() {
     const version = source.version();
     const now = Date.now();
+    const pages = source.pages?.();
+    const sources = source.sources?.() ?? [];
+    const stored = (doc.sourcesSaved ??= new Set());
     setSaving(true);
     try {
       await store.save(
@@ -113,16 +123,19 @@ export function createAutosave(doc: DraftDocument, source: Source, store: Pick<t
           id: doc.id,
           version: DRAFT_VERSION,
           name: doc.name,
-          pageCount: doc.pageCount,
+          pageCount: pages?.length ?? doc.pageCount,
           size: doc.bytes.length,
           placements: source.placements(),
           signatures: source.signatures(),
+          ...(pages && { pages, sources: sources.map(({ id, name }) => ({ id, name })) }),
           createdAt: doc.createdAt,
           savedAt: now,
         },
         doc.fileSaved ? undefined : doc.bytes,
+        sources.filter((s) => !stored.has(s.id)),
       );
       doc.fileSaved = true;
+      for (const s of sources) stored.add(s.id);
       failed = undefined;
       batch(() => {
         setSaved(version);

@@ -27,3 +27,6 @@ export function blankPdf(width: number, height: number): Uint8Array {
 
 /** The source id for blank pages of this size. The same size is always the same source. */
 export const blankId = (width: number, height: number) => `blank:${num(width)}x${num(height)}`;
+
+/** Whether a source id is for blank pages: made again when needed, never stored. */
+export const isBlankSource = (id: string) => id.startsWith("blank:");

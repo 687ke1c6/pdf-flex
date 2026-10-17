@@ -2,6 +2,7 @@
 // Page operations (insert, delete, move) edit this list; the PDF bytes are only
 // assembled from it at download. Placements keep 1-based page numbers, so every
 // operation remaps them by following each slot's key to its new position.
+import { isBlankSource } from "../pages/blank";
 import type { LoadedPdf, PageSize } from "../viewer/pdf";
 import type { Placement } from "./placement";
 
@@ -32,6 +33,16 @@ export interface PagesState {
   slots: Slot[];
   placements: Placement[];
 }
+
+/** The page list without keys, as a draft keeps it (keys are given again when it's restored). */
+export const withoutKeys = (slots: Slot[]): NewSlot[] => slots.map(({ key: _key, ...page }) => page);
+
+/** The sources pages come from, each once, in order of first use. */
+export const sourcesOf = (pages: NewSlot[]): string[] => [...new Set(pages.map((p) => p.source))];
+
+/** The PDFs pages were inserted from (not the document itself, not blank pages): what a draft stores besides the document. */
+export const insertedSources = (slots: Slot[], sources: Map<string, Source>, documentId: string): Source[] =>
+  sourcesOf(slots).flatMap((id) => (id === documentId || isBlankSource(id) ? [] : [sources.get(id)!]));
 
 /** A source's pages as slots, in order, keyed `${prefix}0`, `${prefix}1`, …. */
 export const slotsOf = (source: string, pages: PageSize[], prefix = "s"): Slot[] =>

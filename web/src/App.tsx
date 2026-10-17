@@ -10,6 +10,7 @@ import { Sidebar } from "./app/Sidebar";
 import { QuickBar, toolForKey } from "./app/ToolRail";
 import { StatusBar } from "./app/StatusBar";
 import { pagesPdf } from "./download/assemble";
+import { openDraftSources } from "./pages/draftPages";
 import { inspectPdf, sameLayout, stampPdf } from "./download/stamper";
 import { clampZoom, stepZoom } from "./viewer/zoom";
 import { UpdatePrompt } from "./app/pwa";
@@ -85,7 +86,12 @@ export function App() {
 
   async function restore(session: DocSession, draft: Draft) {
     session.setOffer(null);
-    await editor.restoreDraft(usablePlacements(draft), draft.signatures, session.state);
+    if (draft.pages) {
+      const missing = await openDraftSources(draft, session.state.sources, (source) => draftStore.source(draft.id, source));
+      if (missing.length)
+        setError(`Pages inserted from ${missing.join(", ")} couldn't be restored, so they and what was on them were left out.`);
+    }
+    await editor.restoreDraft(usablePlacements(draft), draft.signatures, session.state, draft.pages);
   }
 
   /** In the background: warns now, not at save time, if this PDF can't be edited. */
@@ -112,7 +118,7 @@ export function App() {
     const pdf = await openPdf(bytes);
     const draft = await draftStore.get(id).catch(() => undefined);
     const session = createSession({ id, name: draft?.name ?? name, bytes, pdf, draft }, editor);
-    if (draft?.placements.length) {
+    if (draft && (draft.placements.length || draft.pages)) {
       if (resume) await restore(session, draft);
       else session.setOffer(draft);
     }
@@ -627,7 +633,8 @@ export function App() {
           <div class="restore" role="status">
             <span>
               You have unsaved work on this document from {formatSavedAt(draft().savedAt)} ({draft().placements.length}{" "}
-              {draft().placements.length === 1 ? "item" : "items"}).
+              {draft().placements.length === 1 ? "item" : "items"}
+              {draft().pages ? ", pages changed" : ""}).
             </span>
             <button class="primary" onClick={() => active() && restore(active()!, draft())}>
               Restore

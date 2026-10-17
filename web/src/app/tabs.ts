@@ -4,7 +4,8 @@
 import { createEffect, createRoot, createSignal, on, type Accessor, type Setter } from "solid-js";
 import { createAutosave, type Autosave, type DraftDocument } from "../drafts/autosave";
 import type { Draft } from "../drafts/draftStore";
-import { createDocState, isDirty, snapshotOf, type DocState } from "../document/docState";
+import { createDocState, isDirty, savedKey, snapshotOf, type DocState } from "../document/docState";
+import { insertedSources, withoutKeys } from "../document/pages";
 import type { Editor } from "../document/editor";
 import type { LoadedPdf } from "../viewer/pdf";
 import type { ScrollPosition } from "../viewer/Viewer";
@@ -87,11 +88,14 @@ export function createSession(init: { id: string; name: string; bytes: Uint8Arra
       pageCount: init.pdf.pages.length,
       createdAt: init.draft?.createdAt ?? Date.now(),
       fileSaved: !!init.draft,
+      sourcesSaved: new Set(init.draft?.sources?.map((s) => s.id)),
     };
     const autosave = createAutosave(draftDoc, {
-      version: () => JSON.stringify(state.placements),
+      version: () => savedKey(state.slots(), state.placements),
       placements: () => snapshotOf(state),
       signatures: () => editor.usedSignatures(state),
+      pages: () => (state.pagesChanged() ? withoutKeys(state.slots()) : undefined),
+      sources: () => insertedSources(state.slots(), state.sources, init.id),
     });
     const [zoom, setZoom] = createSignal(1);
     const [page, setPage] = createSignal(1);
@@ -102,8 +106,8 @@ export function createSession(init: { id: string; name: string; bytes: Uint8Arra
     // Starting work while a draft is on offer means starting over.
     createEffect(
       on(
-        () => JSON.stringify(state.placements),
-        () => offer() && state.placements.length && setOffer(null),
+        () => savedKey(state.slots(), state.placements),
+        () => offer() && (state.placements.length || state.pagesChanged()) && setOffer(null),
         { defer: true },
       ),
     );

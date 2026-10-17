@@ -2,7 +2,7 @@
 import { createContext, createEffect, createSignal, useContext, type ParentProps } from "solid-js";
 import { createStore, unwrap, type SetStoreFunction } from "solid-js/store";
 import { createDocState, isDirty, savedKey, snapshotOf, stateOf, type DocState } from "./docState";
-import { deletePages, insertSlots, movePages, type NewSlot, type PagesState, type Source } from "./pages";
+import { deletePages, insertSlots, movePages, rearrange, type NewSlot, type PagesState, type Source } from "./pages";
 import type { PageSize } from "../viewer/pdf";
 import {
   centeredAt,
@@ -397,14 +397,24 @@ function createEditor() {
     },
 
     /**
-     * Puts back a draft's placements on the open document. Signatures it uses
-     * that have since left the library are added back to it.
+     * Puts back a draft's pages (if they were changed) and placements on a
+     * document. Signatures it uses that have since left the library are added
+     * back to it. The pages' sources must already be in the document's sources;
+     * pages whose source isn't are left out, with what's placed on them.
      */
-    async restoreDraft(saved: Placement[], signatures: StoredSignature[], d: DocState = doc()) {
+    async restoreDraft(saved: Placement[], signatures: StoredSignature[], d: DocState = doc(), pages?: NewSlot[]) {
       if (d === doc()) endEdit();
       const missing = signatures.filter((s) => !library.some((l) => l.id === s.id));
       if (missing.length) await addToLibrary(missing);
-      const usable = saved.filter((p) => p.kind !== "image" || library.some((s) => s.id === p.signatureId));
+      let usable = saved.filter((p) => p.kind !== "image" || library.some((s) => s.id === p.signatureId));
+      if (pages) {
+        const slots = pages.map((p) => ({ ...p, key: `s${d.nextSlotKey++}` }));
+        const restored = rearrange({ slots, placements: usable }, slots.filter((s) => d.sources.has(s.source)));
+        if (restored.slots.length) {
+          d.setSlots(restored.slots);
+          usable = restored.placements;
+        }
+      }
       d.setPlacements(structuredClone(usable));
       d.setSelection([]);
       d.history.clear();
