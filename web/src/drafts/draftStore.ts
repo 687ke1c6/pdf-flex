@@ -16,7 +16,7 @@ export interface Draft {
   version: number;
   name: string;
   pageCount: number;
-  /** Size of the PDF in bytes. */
+  /** Size in bytes of the PDFs stored with it: the document's, and those its pages were inserted from. */
   size: number;
   placements: Placement[];
   /** Copies of the signatures its placements use, so it restores even if they're deleted from the library. */
@@ -88,15 +88,17 @@ export const draftStore = {
 
   /**
    * Saves a draft, its PDF when given (only needed the first time), and the PDFs
-   * pages were inserted from in `sources` (each only needed once).
+   * pages were inserted from in `sources` (each only needed once). Stored
+   * inserted PDFs in `drop` (by source id) are deleted: no page uses them any more.
    */
-  save: (draft: Draft, pdf?: Uint8Array, sources: { id: string; bytes: Uint8Array }[] = []) =>
+  save: (draft: Draft, pdf?: Uint8Array, sources: { id: string; bytes: Uint8Array }[] = [], drop: string[] = []) =>
     runAll(["drafts", "draftFiles"], (tx) => {
       tx.objectStore("drafts").put(draft);
       const files = tx.objectStore("draftFiles");
       const blob = (bytes: Uint8Array) => new Blob([bytes as Uint8Array<ArrayBuffer>]);
       if (pdf) files.put({ id: draft.id, pdf: blob(pdf) } satisfies DraftFile);
       for (const s of sources) files.put({ id: fileKey(draft.id, s.id), pdf: blob(s.bytes) } satisfies DraftFile);
+      for (const id of drop) files.delete(fileKey(draft.id, id));
     }),
 
   remove: (id: string) =>

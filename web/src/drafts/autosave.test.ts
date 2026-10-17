@@ -249,13 +249,13 @@ test("turning drafts back on saves what changed while they were off", async () =
   }
 });
 
-test("changed pages are saved with the draft, and each inserted PDF is written once", async () => {
+test("changed pages are saved with the draft, each inserted PDF is written once and removed when unused", async () => {
   const [version, edit] = createSignal("v0");
   const [pages, setPages] = createSignal<NewSlot[] | undefined>(undefined);
-  const saves: { draft: Draft; sources: string[] }[] = [];
+  const saves: { draft: Draft; sources: string[]; drop: string[] }[] = [];
   const store = {
-    save: async (draft: Draft, _pdf?: Uint8Array, sources: { id: string }[] = []) => {
-      saves.push({ draft, sources: sources.map((s) => s.id) });
+    save: async (draft: Draft, _pdf?: Uint8Array, sources: { id: string }[] = [], drop: string[] = []) => {
+      saves.push({ draft, sources: sources.map((s) => s.id), drop });
     },
   };
   const other = { id: "other", name: "other.pdf", bytes: new Uint8Array(2) };
@@ -282,6 +282,8 @@ test("changed pages are saved with the draft, and each inserted PDF is written o
   expect(saves[0].draft.sources).toEqual([{ id: "other", name: "other.pdf" }]);
   expect(saves[0].draft.pageCount).toBe(2);
   expect(saves[0].sources).toEqual(["other"]);
+  // The document's 4 bytes and the inserted PDF's 2.
+  expect(saves[0].draft.size).toBe(6);
 
   edit("v2");
   jest.advanceTimersByTime(SAVE_DELAY_MS);
@@ -296,5 +298,15 @@ test("changed pages are saved with the draft, and each inserted PDF is written o
   await settle();
   expect(saves[2].draft.pages).toBeUndefined();
   expect(saves[2].draft.pageCount).toBe(1);
+  expect(saves[2].draft.size).toBe(4);
+  expect(saves[2].drop).toEqual(["other"]);
+
+  // Its pages back (an undo): written again, and nothing to remove.
+  setPages([page("abc"), page("other")]);
+  edit("v4");
+  jest.advanceTimersByTime(SAVE_DELAY_MS);
+  await settle();
+  expect(saves[3].sources).toEqual(["other"]);
+  expect(saves[3].drop).toEqual([]);
   expect(autosave.upToDate()).toBe(true);
 });

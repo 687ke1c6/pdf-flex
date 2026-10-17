@@ -334,6 +334,10 @@ UX changes after trying chunks 4–5.
   - A draft with only page changes is offered too, and the banner says "pages changed". Starting work (a page change counts) dismisses the offer.
 - **Pure helpers in `document/pages.ts`:** `withoutKeys`, `sourcesOf`, `insertedSources`. They live there because the session code that uses them is unit-tested and can't import pdf.js's Vite-only worker URL.
 - **Closes the chunk 2 gap** (drafts didn't know about pages).
+- **Fix after your check:**
+  - The draft's size (shown in Recent) counted only the document's PDF. It now adds the inserted PDFs the pages use.
+  - Each save also deletes stored inserted PDFs no page uses any more, so the size matches what's actually kept. If undo brings their pages back, they're written again.
+  - Your check: insert pages from two other PDFs; Recent's size grows by about their sizes. Delete all pages from one of them: after the next save, the size drops back.
 - **Tests:** 1 new in `pages.test.ts` (what a draft keeps) and 1 in `autosave.test.ts` (pages saved, page count, each inserted PDF written once, no page list once pages are back as opened).
 - **Verified (no browser):** `just test` (Rust, plus 112 web tests), `just lint` and `just build` pass.
 - **Your checks** (flag on):

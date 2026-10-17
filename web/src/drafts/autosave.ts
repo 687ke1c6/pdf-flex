@@ -116,6 +116,8 @@ export function createAutosave(doc: DraftDocument, source: Source, store: Pick<t
     const pages = source.pages?.();
     const sources = source.sources?.() ?? [];
     const stored = (doc.sourcesSaved ??= new Set());
+    // Stored before, but no page uses them now (deleted, or undone): removed, and written again if they come back.
+    const unused = [...stored].filter((id) => !sources.some((s) => s.id === id));
     setSaving(true);
     try {
       await store.save(
@@ -124,7 +126,7 @@ export function createAutosave(doc: DraftDocument, source: Source, store: Pick<t
           version: DRAFT_VERSION,
           name: doc.name,
           pageCount: pages?.length ?? doc.pageCount,
-          size: doc.bytes.length,
+          size: sources.reduce((sum, s) => sum + s.bytes.length, doc.bytes.length),
           placements: source.placements(),
           signatures: source.signatures(),
           ...(pages && { pages, sources: sources.map(({ id, name }) => ({ id, name })) }),
@@ -133,9 +135,11 @@ export function createAutosave(doc: DraftDocument, source: Source, store: Pick<t
         },
         doc.fileSaved ? undefined : doc.bytes,
         sources.filter((s) => !stored.has(s.id)),
+        unused,
       );
       doc.fileSaved = true;
       for (const s of sources) stored.add(s.id);
+      for (const id of unused) stored.delete(id);
       failed = undefined;
       batch(() => {
         setSaved(version);
