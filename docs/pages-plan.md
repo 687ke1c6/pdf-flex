@@ -97,8 +97,8 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 | 2 | Viewer renders the page list | A document whose slots come from two PDFs displays, zooms and accepts placements | ✅ (pending your check) |
 | 3 | Assembly at download | Download of an edited page list gives the right pages, with items where they were placed; Bun test over the corpus | ✅ (pending your check) |
 | 4 | Pages panel: delete and blank page | Delete and add blank pages from the panel, undo them, download | ✅ (pending your check) |
-| 5 | Insert from another PDF | Insert all or some pages of another PDF anywhere, by button or drop | 🔜 (insert all pages at a position: done in chunk 4) |
-| 6 | Drafts | Reloading restores inserted and deleted pages | ⬜ |
+| 5 | Insert from another PDF | Insert all or some pages of another PDF anywhere, by button or drop | ✅ (pending your check) |
+| 6 | Drafts | Reloading restores inserted and deleted pages | 🔜 |
 | 7 | Spike review | Decide: flag off and ship, adjust, or switch to option B | ⬜ |
 
 ### Chunk 0: Feature flag
@@ -261,6 +261,32 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 - Multi-page files open the range dialog (All / `1-3, 5`, thumbnails); single-page files go straight in.
 - The same file inserted twice shares one source (keyed by its SHA-256, as drafts already are).
 - **Your check:** insert a whole PDF before page 1, between pages and at the end; insert a range; insert by drop; insert a password-protected PDF (refused with a clear message); undo each.
+
+**As built**
+- **Inserting at a position** (＋ → PDF…, Add PDF at the end…) and the `sourceFrom` checks came in chunk 4.
+- **`pages/ranges.ts`:**
+  - `parseRanges(text, count)` gives sorted, de-duplicated 0-based pages or a user-facing message. It accepts `1-3, 5`, spaces, semicolons and en dashes. `4-` runs to the end; `5-3` means `3-5`.
+  - `formatRanges` writes pages back as `1-3, 5`.
+  - 3 tests.
+- **`pages/PageRangeDialog.tsx`** opens for any PDF with more than one page:
+  - Options are **All pages** or **Pages [1-3, 5]**, and an error shows inline while the range is wrong.
+  - A grid of thumbnails toggles pages and rewrites the range text, and typing updates which thumbnails are picked.
+  - The button reads **Insert N pages**. Escape or Cancel inserts nothing, and a source opened just for this is closed again.
+- **Panel:**
+  - `insert` asks the dialog (promise-based, like `askConfirm`) and returns how many pages went in.
+  - **Drop** PDFs on the thumbnail list: a thick line shows the gap nearest the pointer, and the files go in there, one after another, each through the dialog if it has several pages.
+  - Non-PDFs are refused with "That doesn't look like a PDF."
+- **App:** its window drag handlers skip events a drop target already handled (`defaultPrevented`). So a PDF dropped on the panel isn't also opened in a tab, and "Drop to open" doesn't show over the document while dragging over the panel. The page overlay only prevents default for signature drags, which App ignored already, so nothing else changes.
+- **Verified (no browser):** `just test` (Rust, plus 110 web tests), `just lint` and `just build` pass.
+- **Your checks** (flag on, Pages tool):
+  1. ＋ → PDF… with a multi-page PDF (e.g. `out/many-pages.pdf` or the W-9): the dialog opens with thumbnails. Insert all; then again with `2-3, 5`; then by clicking thumbnails (the text follows). Each set lands at the chosen gap in order.
+  2. Type a bad range (`9`, `1-2-3`, empty): the error shows and Insert is disabled. Enter doesn't insert.
+  3. Cancel and Escape insert nothing.
+  4. A one-page PDF goes straight in without the dialog.
+  5. Drag a PDF over the thumbnails: a line follows the pointer between pages, and the document doesn't show "Drop to open". Drop: it's inserted there and not opened in a tab. Drop two PDFs at once: both go in, in order.
+  6. Drop a PNG on the list: refused with a message. Drop a PDF on the document instead: it still opens in a tab as before.
+  7. Password-protected PDF (`crates/pdf-stamp/tests/corpus/generated/encrypted-user-password.pdf`) by button and by drop: refused with the "password-protected" message.
+  8. Undo each insert.
 
 ### Chunk 6: Drafts
 - The draft gains optional `sources` (ids and names) and `slots`. The inserted PDFs go into `draftFiles` under their hash.

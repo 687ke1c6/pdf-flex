@@ -2,8 +2,9 @@
 // thumbnails, to delete pages and to insert blank pages or pages from other PDFs
 // between them. See docs/pages-plan.md.
 import { createEffect, createSignal, For, on, Show } from "solid-js";
-import { useEditor } from "../document/editor";
+import { SIGNATURE_DRAG_TYPE, useEditor } from "../document/editor";
 import type { NewSlot, Slot, Source } from "../document/pages";
+import { PageRangeDialog } from "./PageRangeDialog";
 import { blankSource, sourceFrom } from "./source";
 import { Thumbnail } from "./Thumbnail";
 
@@ -26,6 +27,10 @@ export function PagesPanel(props: Props) {
   let anchor = 0;
   /** The gap whose insert actions are showing (0-based position to insert at), if any. */
   const [openGap, setOpenGap] = createSignal<number | null>(null);
+  /** Where dropped PDFs would go (0-based), while files are dragged over the list. */
+  const [dropAt, setDropAt] = createSignal<number | null>(null);
+  /** The PDF whose pages are being chosen, and where the choice goes. */
+  const [choosing, setChoosing] = createSignal<{ source: Source; resolve(pages: number[] | null): void } | null>(null);
   const [busy, setBusy] = createSignal(false);
   /** Where a chosen PDF goes (0-based). */
   let insertAt = 0;
@@ -100,18 +105,80 @@ export function PagesPanel(props: Props) {
     }
   }
 
-  /** Inserts every page of a source; `what` names it in an error. */
-  async function insert(at: number, what: string, load: () => Promise<Source>) {
+  /** Asks which pages of a PDF to insert; resolves to them (0-based), or null if cancelled. */
+  const choosePages = (source: Source) => new Promise<number[] | null>((resolve) => setChoosing({ source, resolve }));
+
+  /**
+   * Inserts pages of a source at `at`: all of them, or for a PDF with several,
+   * the ones chosen in the range dialog. `what` names it in an error. Resolves
+   * to how many pages went in.
+   */
+  async function insert(at: number, what: string, load: () => Promise<Source>): Promise<number> {
     setOpenGap(null);
     setBusy(true);
     try {
-      const source = editor.addSource(await load());
-      editor.insertPages(at, pagesOf(source));
+      const loaded = await load();
+      const isNew = !editor.doc().sources.has(loaded.id);
+      let pages = pagesOf(loaded);
+      if (pages.length > 1) {
+        const chosen = await choosePages(loaded);
+        if (!chosen) {
+          if (isNew) void loaded.pdf.close();
+          return 0;
+        }
+        pages = chosen.map((i) => pages[i]);
+      }
+      editor.addSource(loaded);
+      editor.insertPages(at, pages);
+      return pages.length;
     } catch (err) {
       props.onError(`Couldn't add ${what}: ${err instanceof Error ? err.message : err}`);
+      return 0;
     } finally {
       setBusy(false);
     }
+  }
+
+  const loadFile = (file: File) => () => sourceFrom(file, editor.doc().sources);
+
+  /** Inserts PDF files one after another, starting at `at`. */
+  async function insertFiles(files: File[], at: number) {
+    for (const file of files) at += await insert(at, `“${file.name}”`, loadFile(file));
+  }
+
+  // Dropping PDFs on the list inserts them where the line shows. Handled here (default prevented), the app
+  // doesn't also open them in a tab.
+  const isFileDrag = (e: DragEvent) => {
+    const types = e.dataTransfer?.types ?? [];
+    return types.includes("Files") && !types.includes(SIGNATURE_DRAG_TYPE);
+  };
+  /** The gap nearest a point: before the first page whose middle is below it. */
+  function gapAt(clientY: number): number {
+    const items = [...list.querySelectorAll<HTMLElement>(".page-item")];
+    const i = items.findIndex((el) => {
+      const r = el.getBoundingClientRect();
+      return clientY < r.top + r.height / 2;
+    });
+    return i < 0 ? items.length : i;
+  }
+  function onDragOver(e: DragEvent) {
+    if (!isFileDrag(e) || busy()) return;
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = "copy";
+    setDropAt(gapAt(e.clientY));
+  }
+  function onDragLeave(e: DragEvent) {
+    if (!list.contains(e.relatedTarget as Node | null)) setDropAt(null);
+  }
+  function onDrop(e: DragEvent) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    const at = dropAt() ?? gapAt(e.clientY);
+    setDropAt(null);
+    if (busy()) return;
+    const pdfs = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
+    if (!pdfs.length) return props.onError("That doesn't look like a PDF.");
+    void insertFiles(pdfs, at);
   }
 
   /** A blank page the size of its neighbour: the page before it, or after it at the start. */
@@ -128,9 +195,10 @@ export function PagesPanel(props: Props) {
   /** The space before page `at + 1` (or after the last page): ＋ opens what can be inserted there. */
   const Gap = (gap: { at: () => number }) => {
     const open = () => openGap() === gap.at();
+    const dropping = () => dropAt() === gap.at();
     const where = () => (gap.at() < slots().length ? `before page ${gap.at() + 1}` : "at the end");
     return (
-      <li class="page-gap" classList={{ open: open() }}>
+      <li class="page-gap" classList={{ open: open(), drop: dropping() }}>
         <button
           class="gap-plus"
           title={`Insert ${where()}`}
@@ -160,7 +228,16 @@ export function PagesPanel(props: Props) {
       <button class="block" disabled={busy()} onClick={() => choosePdf(slots().length)}>
         Add PDF at the end…
       </button>
-      <ol class="page-list" ref={list} aria-label="Pages" on:keydown={onKeyDown}>
+      <p class="hint">Drop PDFs between pages to insert them there.</p>
+      <ol
+        class="page-list"
+        ref={list}
+        aria-label="Pages"
+        on:keydown={onKeyDown}
+        on:dragover={onDragOver}
+        on:dragleave={onDragLeave}
+        on:drop={onDrop}
+      >
         <Gap at={() => 0} />
         <For each={slots()}>
           {(slot, i) => {
@@ -201,9 +278,20 @@ export function PagesPanel(props: Props) {
         onChange={(e) => {
           const file = e.currentTarget.files?.[0];
           e.currentTarget.value = "";
-          if (file) void insert(insertAt, `“${file.name}”`, () => sourceFrom(file, editor.doc().sources));
+          if (file) void insert(insertAt, `“${file.name}”`, loadFile(file));
         }}
       />
+      <Show when={choosing()} keyed>
+        {(c) => (
+          <PageRangeDialog
+            source={c.source}
+            onDone={(pages) => {
+              setChoosing(null);
+              c.resolve(pages);
+            }}
+          />
+        )}
+      </Show>
     </section>
   );
 }

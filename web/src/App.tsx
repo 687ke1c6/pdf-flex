@@ -289,7 +289,9 @@ export function App() {
   };
   // Capture phase: runs even if a drop target (e.g. a page) stops propagation.
   const endDrag = () => setDragging(false);
+  // A drop target that takes files itself (the Pages panel) prevents the default first; then it's not "drop to open".
   function onDragOver(e: DragEvent) {
+    if (e.defaultPrevented) return setDragging(false);
     if (!isFileDrag(e)) return;
     e.preventDefault();
     setDragging(true);
@@ -299,7 +301,7 @@ export function App() {
     if (!e.relatedTarget) setDragging(false);
   }
   async function onDrop(e: DragEvent) {
-    if (!isFileDrag(e)) return;
+    if (e.defaultPrevented || !isFileDrag(e)) return;
     e.preventDefault();
     setDragging(false);
     const pdfs = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));

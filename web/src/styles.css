@@ -381,6 +381,18 @@ button.danger:hover { border-color: var(--danger); background: var(--danger-bg);
 .page-gap:hover::before, .page-gap:focus-within::before, .page-gap.open::before { opacity: 0.6; }
 .page-gap:hover .gap-plus, .page-gap.open .gap-plus, .gap-plus:focus-visible { opacity: 1; }
 .gap-actions { position: relative; z-index: 1; display: flex; gap: 0.3rem; margin: 0.3rem 0 0.4rem; }
+/* Where dropped PDFs will go. */
+.page-gap.drop::before { opacity: 1; border-top-width: 3px; }
+/* The range dialog's page picker: thumbnails that toggle. */
+.range-thumbs {
+  list-style: none; margin: 0.75rem 0 0; padding: 0.25rem; max-height: min(22rem, 45vh); overflow-y: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap: 0.4rem; justify-items: center;
+}
+.range-thumbs button {
+  height: auto; flex-direction: column; gap: 0.25rem; padding: 0.3rem;
+  border: 1.5px solid transparent; border-radius: 6px; background: none; opacity: 0.55;
+}
+.range-thumbs button.picked { border-color: var(--accent); background: var(--accent-soft); opacity: 1; }
 /* Touch screens can't hover: the + and × are always there. */
 @media (hover: none) {
   .gap-plus, .page-item .remove { opacity: 1; }
