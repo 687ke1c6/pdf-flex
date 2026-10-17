@@ -95,7 +95,7 @@ export function StatusBar(props: Props) {
       case "shapes":
         return DRAW_HINTS[editor.shapeTool()];
       case "pages":
-        return "Click a page to select it (Ctrl/Shift: several) · Delete removes it with what's on it · + inserts · Ctrl+Z undoes";
+        return "Click a page to select it (Ctrl/Shift: several) · Drag (or Alt+↑↓) to move · Delete removes · + inserts · Ctrl+Z undoes";
     }
   };
 

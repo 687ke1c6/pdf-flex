@@ -405,7 +405,12 @@ button.danger:hover { border-color: var(--danger); background: var(--danger-bg);
 .insert-dialog .insert-blank .hint { margin: 0.1rem 0 0; }
 .insert-blank svg, .insert-drop svg { width: 2rem; height: 2rem; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .insert-drop { width: auto; padding: 1.5rem 1rem; margin: 0; gap: 0.5rem; }
-/* Where dropped PDFs will go. */
+/* Pages being dragged to a new place: faded where they were, while a line shows where they'll go. */
+.page-item > button.select { touch-action: pan-y; }
+.page-list.reordering, .page-list.reordering * { cursor: grabbing; }
+.page-list.reordering .gap-plus { visibility: hidden; }
+.page-item.dragging { opacity: 0.4; }
+/* Where dropped PDFs (or dragged pages) will go. */
 .page-gap.drop::before { opacity: 1; border-top-width: 3px; }
 /* The range dialog's page picker: thumbnails that toggle. */
 .range-thumbs-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.75rem; }

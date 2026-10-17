@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createDocState, hasChanges, isDirty, savedKey, stateOf } from "./docState";
 import { createHistory } from "./history";
-import { deletePages, insertSlots, movePages, pagesOf, rearrange, singleSource, slotsOf, sourcesOf, usedSources, withoutKeys, type PagesState, type Source } from "./pages";
+import { deletePages, insertSlots, movePages, pagesOf, stepAt, rearrange, singleSource, slotsOf, sourcesOf, usedSources, withoutKeys, type PagesState, type Source } from "./pages";
 import type { Placement } from "./placement";
 
 const LETTER = { width: 612, height: 792 };
@@ -141,4 +141,14 @@ test("a draft keeps the pages without keys, and every PDF they use but blank pag
   expect(sourcesOf(withoutKeys(slots))).toEqual(["orig", "other", "blank:612x792"]);
   const [orig, other] = [source("orig", 1), source("other", 2)];
   expect(usedSources(slots, new Map([["orig", orig], ["other", other]]))).toEqual([orig, other]);
+});
+
+test("pages move one step up or down, together, and stop at the ends", () => {
+  const step = (pages: number[], dir: -1 | 1) => order(movePages(doc(), pages, stepAt(pages, 3, dir)));
+  expect(step([2], -1)).toEqual(["orig:1", "orig:0", "orig:2"]);
+  expect(step([2], 1)).toEqual(["orig:0", "orig:2", "orig:1"]);
+  expect(step([1], -1)).toEqual(order(doc()));
+  expect(step([3], 1)).toEqual(order(doc()));
+  expect(step([1, 2], 1)).toEqual(["orig:2", "orig:0", "orig:1"]);
+  expect(step([3, 2], -1)).toEqual(["orig:1", "orig:2", "orig:0"]);
 });

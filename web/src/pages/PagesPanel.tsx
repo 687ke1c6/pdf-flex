@@ -3,7 +3,7 @@
 // between them. See docs/pages-plan.md.
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { SIGNATURE_DRAG_TYPE, useEditor } from "../document/editor";
-import { pagesOf, type Slot, type Source } from "../document/pages";
+import { pagesOf, stepAt, type Slot, type Source } from "../document/pages";
 import type { PageSize } from "../viewer/pdf";
 import { InsertDialog } from "./InsertDialog";
 import { PageRangeDialog } from "./PageRangeDialog";
@@ -42,8 +42,10 @@ export function PagesPanel(props: Props) {
   let anchor = 0;
   /** The gap whose Insert dialog is open (0-based position to insert at), if any. */
   const [inserting, setInserting] = createSignal<number | null>(null);
-  /** Where dropped PDFs would go (0-based), while files are dragged over the list. */
+  /** Where dropped PDFs, or pages being dragged, would go (0-based gap), while dragging over the list. */
   const [dropAt, setDropAt] = createSignal<number | null>(null);
+  /** The pages being dragged to a new place, by slot key. */
+  const [dragging, setDragging] = createSignal<string[]>([]);
   /** The PDF whose pages are being chosen, and where the choice goes. */
   const [choosing, setChoosing] = createSignal<{ source: Source; resolve(pages: number[] | null): void } | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -62,7 +64,15 @@ export function PagesPanel(props: Props) {
     ),
   );
 
+  /** The selected pages (1-based), in document order. */
+  const pickedPages = () => slots().flatMap((s, j) => (isPicked(s) ? [j + 1] : []));
+
   function click(e: MouseEvent, i: number) {
+    // The click that ends a drag isn't a click.
+    if (dragEnded) {
+      dragEnded = false;
+      return;
+    }
     const key = slots()[i].key;
     if (e.shiftKey) {
       const [from, to] = [Math.min(anchor, i), Math.max(anchor, i)];
@@ -100,13 +110,27 @@ export function PagesPanel(props: Props) {
     void remove(slots().flatMap((s, j) => (isPicked(s) ? [j + 1] : [])));
   }
 
-  /** Delete removes the selected pages; Up and Down move the selection. Kept from the document's own shortcuts. */
+  /**
+   * Delete removes the selected pages; Up and Down move the selection, and with
+   * Alt move the selected pages. Kept from the document's own shortcuts.
+   */
   function onKeyDown(e: KeyboardEvent) {
     if (e.target instanceof HTMLInputElement) return;
+    if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      e.stopPropagation();
+      const pages = pickedPages();
+      if (!pages.length) return;
+      editor.movePages(pages, stepAt(pages, slots().length, e.key === "ArrowUp" ? -1 : 1));
+      const first = slots().findIndex((s) => isPicked(s));
+      props.onGoToPage(first + 1);
+      list.querySelectorAll<HTMLButtonElement>(".page-item > button.select")[first]?.focus();
+      return;
+    }
     if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
       e.stopPropagation();
-      void remove(slots().flatMap((s, j) => (isPicked(s) ? [j + 1] : [])));
+      void remove(pickedPages());
       return;
     }
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
@@ -119,6 +143,92 @@ export function PagesPanel(props: Props) {
       props.onGoToPage(i + 1);
       list.querySelectorAll<HTMLButtonElement>(".page-item > button.select")[i]?.focus();
     }
+  }
+
+  // Dragging pages to reorder them, with pointer events so it works with mouse, pen and touch. A drag
+  // starts once the pointer has moved a few pixels (on touch, after a long press, so a swipe still
+  // scrolls); a line shows where the pages will go, and the list scrolls near its edges.
+  /** Set when a drag ends, so the click that follows doesn't select. */
+  let dragEnded = false;
+
+  function onPagePointerDown(e: PointerEvent, i: number) {
+    if (e.button !== 0 || busy()) return;
+    const start = { x: e.clientX, y: e.clientY };
+    const touch = e.pointerType === "touch";
+    let started = false;
+    let pressTimer: ReturnType<typeof setTimeout> | undefined;
+    let scrollTimer: ReturnType<typeof setInterval> | undefined;
+    let lastY = e.clientY;
+    const scroller = list.closest<HTMLElement>(".sidebar-panel");
+
+    const begin = () => {
+      started = true;
+      // A selected page drags the whole selection; another page drags just itself (and becomes the selection).
+      const key = slots()[i].key;
+      if (!isPicked(slots()[i])) {
+        setPicked([key]);
+        anchor = i;
+      }
+      setDragging(slots().filter(isPicked).map((s) => s.key));
+      setDropAt(gapAt(lastY));
+      // Near the top or bottom of the panel, it scrolls.
+      scrollTimer = setInterval(() => {
+        if (!scroller) return;
+        const r = scroller.getBoundingClientRect();
+        const by = lastY < r.top + 40 ? -12 : lastY > r.bottom - 40 ? 12 : 0;
+        if (by) {
+          scroller.scrollTop += by;
+          setDropAt(gapAt(lastY));
+        }
+      }, 16);
+    };
+    if (touch) pressTimer = setTimeout(begin, 350);
+
+    const move = (m: PointerEvent) => {
+      if (m.pointerId !== e.pointerId) return;
+      lastY = m.clientY;
+      const far = Math.hypot(m.clientX - start.x, m.clientY - start.y) > (touch ? 8 : 4);
+      if (!started) {
+        if (!far) return;
+        // On touch, moving before the long press is a scroll.
+        if (touch) return end();
+        begin();
+      }
+      setDropAt(gapAt(m.clientY));
+    };
+    // While a touch drag is on, the panel mustn't scroll under the finger.
+    const noScroll = (t: TouchEvent) => started && t.preventDefault();
+    const key = (k: KeyboardEvent) => {
+      if (k.key !== "Escape") return;
+      k.preventDefault();
+      k.stopPropagation();
+      end(true);
+    };
+    const up = (u: PointerEvent) => u.pointerId === e.pointerId && end();
+    function end(cancel = false) {
+      clearTimeout(pressTimer);
+      clearInterval(scrollTimer);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancelled);
+      window.removeEventListener("touchmove", noScroll);
+      window.removeEventListener("keydown", key, true);
+      if (!started) return;
+      dragEnded = true;
+      // The click (if one follows) arrives right away; if none does, forget it.
+      setTimeout(() => (dragEnded = false), 0);
+      const at = dropAt();
+      const pages = pickedPages();
+      setDragging([]);
+      setDropAt(null);
+      if (!cancel && at !== null && pages.length) editor.movePages(pages, at);
+    }
+    const cancelled = (c: PointerEvent) => c.pointerId === e.pointerId && end(true);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancelled);
+    window.addEventListener("touchmove", noScroll, { passive: false });
+    window.addEventListener("keydown", key, true);
   }
 
   /** Asks which pages of a PDF to insert; resolves to them (0-based), or null if cancelled. */
@@ -234,10 +344,10 @@ export function PagesPanel(props: Props) {
         <span class="hint">{busy() ? "Adding…" : `${slots().length} ${slots().length === 1 ? "page" : "pages"}`}</span>
         <ThumbSizeSwitch />
       </div>
-      <p class="hint">＋ between pages inserts there. You can also drop PDFs between pages.</p>
+      <p class="hint">Drag pages to move them. ＋ between pages inserts there, and you can drop PDFs between pages.</p>
       <ol
         class="page-list"
-        classList={{ small: thumbsSmall() }}
+        classList={{ small: thumbsSmall(), reordering: dragging().length > 0 }}
         ref={list}
         aria-label="Pages"
         on:keydown={onKeyDown}
@@ -251,9 +361,15 @@ export function PagesPanel(props: Props) {
             const source = () => editor.doc().sources.get(slot.source)!;
             return (
               <>
-                <li class="page-item" classList={{ picked: isPicked(slot), current: props.page === i() + 1 }}>
+                <li
+                  class="page-item"
+                  classList={{ picked: isPicked(slot), current: props.page === i() + 1, dragging: dragging().includes(slot.key) }}
+                >
                   <button
                     class="select"
+                    onPointerDown={(e) => onPagePointerDown(e, i())}
+                    // The browser's own image drag would fight ours.
+                    onDragStart={(e) => e.preventDefault()}
                     title={`Page ${i() + 1} · ${source().name}`}
                     aria-label={`Page ${i() + 1}`}
                     aria-pressed={isPicked(slot)}

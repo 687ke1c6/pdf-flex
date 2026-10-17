@@ -56,6 +56,15 @@ export function singleSource(slots: Slot[], sources: Map<string, Source>): Sourc
   return slots.every((s, i) => s.source === source.id && s.index === i) ? source : undefined;
 }
 
+/**
+ * Where `movePages` should put pages (1-based) to move them one step up (-1) or
+ * down (1): just before the page before the first, or just after the page after the last.
+ */
+export function stepAt(pages: number[], count: number, step: -1 | 1): number {
+  const sorted = [...pages].sort((a, b) => a - b);
+  return step < 0 ? Math.max(0, sorted[0] - 2) : Math.min(count, sorted.at(-1)! + 1);
+}
+
 /** Every page of a source, in order. */
 export const pagesOf = (source: Pick<Source, "id" | "pdf">): NewSlot[] =>
   source.pdf.pages.map(({ width, height }, index) => ({ source: source.id, index, width, height }));
