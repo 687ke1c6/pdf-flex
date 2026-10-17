@@ -27,9 +27,9 @@ function setSmall(on: boolean) {
 
 /** A magnifier with a minus or a plus. */
 const Magnifier = (props: { plus?: boolean }) => (
-  <svg viewBox="0 0 16 16" aria-hidden="true">
-    <circle cx="7" cy="7" r="4.5" />
-    <path d={props.plus ? "M14 14l-3.8-3.8M5 7h4M7 5v4" : "M14 14l-3.8-3.8M5 7h4"} />
+  <svg viewBox="0 0 20 20" aria-hidden="true">
+    <circle cx="8.5" cy="8.5" r="6" />
+    <path d={props.plus ? "M13 13l5 5M5.5 8.5h6M8.5 5.5v6" : "M13 13l5 5M5.5 8.5h6"} />
   </svg>
 );
 
