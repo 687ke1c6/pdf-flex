@@ -7,7 +7,10 @@ import type { PageSize } from "./pdf";
 const MAX_CANVAS_PIXELS = 4096 * 4096;
 
 interface Props {
+  /** The PDF this page comes from, and its 1-based page number there. */
   doc: PDFDocumentProxy;
+  sourcePage: number;
+  /** Its 1-based position in the document being edited. */
   pageNumber: number;
   size: PageSize;
   /** CSS pixels per point, for layout. Changes immediately while zooming. */
@@ -18,14 +21,13 @@ interface Props {
   active: boolean;
   /** Bumped when devicePixelRatio changes (e.g. window moved to another monitor). */
   dprTick: number;
-  ref: (el: HTMLDivElement) => void;
 }
 
 export function PageView(props: Props) {
   let holder!: HTMLDivElement;
 
   createEffect(() => {
-    const { active, renderScale, size, pageNumber } = props;
+    const { active, renderScale, size, pageNumber, doc, sourcePage } = props;
     void props.dprTick;
     if (!active) {
       holder.replaceChildren();
@@ -40,7 +42,7 @@ export function PageView(props: Props) {
     });
 
     (async () => {
-      const page = await props.doc.getPage(pageNumber);
+      const page = await doc.getPage(sourcePage);
       if (cancelled) return;
 
       let pxPerPt = renderScale * (window.devicePixelRatio || 1);
@@ -65,7 +67,6 @@ export function PageView(props: Props) {
   return (
     <div
       class="page"
-      ref={props.ref}
       data-page={props.pageNumber}
       style={{ width: `${props.size.width * props.scale}px`, height: `${props.size.height * props.scale}px` }}
     >

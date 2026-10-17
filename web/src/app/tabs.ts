@@ -34,7 +34,7 @@ export interface DocSession {
   setSaving: Setter<boolean>;
   /** Closing it now would lose work: not downloaded, and not safely in a draft. */
   atRisk(): boolean;
-  /** Stops its autosave and frees its PDF. */
+  /** Stops its autosave and frees its PDFs. */
   dispose(): void;
 }
 
@@ -79,6 +79,7 @@ export const tabName = (tab: Tab) => tab.session?.name ?? tab.pending?.name ?? "
 export function createSession(init: { id: string; name: string; bytes: Uint8Array; pdf: LoadedPdf; draft?: Draft }, editor: Editor): DocSession {
   return createRoot((disposeRoot) => {
     const state = createDocState(init.pdf.pages, init.id);
+    state.sources.set(init.id, { id: init.id, name: init.name, bytes: init.bytes, pdf: init.pdf });
     const draftDoc: DraftDocument = {
       id: init.id,
       name: init.name,
@@ -127,7 +128,7 @@ export function createSession(init: { id: string; name: string; bytes: Uint8Arra
       atRisk: () => isDirty(state) && !autosave.upToDate(),
       dispose() {
         disposeRoot();
-        void init.pdf.close();
+        for (const source of state.sources.values()) void source.pdf.close();
       },
     };
   });

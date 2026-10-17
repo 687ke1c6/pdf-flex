@@ -89,7 +89,7 @@ export function Sidebar(props: Props) {
               <ShapesPanel />
             </Match>
             <Match when={shown() === "pages"}>
-              <PagesPanel />
+              <PagesPanel onError={props.onError} />
             </Match>
             <Match when={shown() === "selection"}>
               <SelectionPanel />

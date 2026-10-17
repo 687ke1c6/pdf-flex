@@ -4,7 +4,7 @@ import { createSignal, type Accessor, type Setter } from "solid-js";
 import { createStore, unwrap, type SetStoreFunction } from "solid-js/store";
 import { createHistory, type History } from "./history";
 import type { PageSize } from "../viewer/pdf";
-import { slotsOf, type PagesState, type Slot } from "./pages";
+import { slotsOf, type PagesState, type Slot, type Source } from "./pages";
 import type { Placement } from "./placement";
 
 /** An in-place text edit in progress. It becomes one undo step when it ends. */
@@ -34,6 +34,11 @@ export interface DocState {
   /** The page list (see pages.ts). Its sizes are what placements are kept within. */
   slots: Accessor<Slot[]>;
   setSlots: Setter<Slot[]>;
+  /**
+   * The PDFs the slots come from, by id. Only ever added to (an undo can bring a
+   * page back), and added before any slot refers to them; closed with the document.
+   */
+  sources: Map<string, Source>;
   nextPlacementId: number;
   nextSlotKey: number;
   history: History<PagesState>;
@@ -62,6 +67,7 @@ export function createDocState(pages: PageSize[], source = ""): DocState {
     session: undefined,
     slots,
     setSlots,
+    sources: new Map(),
     nextPlacementId: 0,
     nextSlotKey: pages.length,
     history: createHistory<PagesState>(() => setHistoryVersion((v) => v + 1)),

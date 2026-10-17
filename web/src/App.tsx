@@ -5,6 +5,7 @@ import { ConfirmHost, askConfirm } from "./common/ConfirmDialog";
 import { DownloadButton, DownloadDialog } from "./download/DownloadDialog";
 import { draftStore, formatSavedAt, usablePlacements, type Draft } from "./drafts/draftStore";
 import { createDocState, SIGNATURE_DRAG_TYPE, useEditor } from "./document/editor";
+import { isUntouched } from "./document/pages";
 import { openPdf } from "./viewer/pdf";
 import { Sidebar } from "./app/Sidebar";
 import { QuickBar, toolForKey } from "./app/ToolRail";
@@ -317,6 +318,11 @@ export function App() {
     editor.endEdit();
     if (!s || !s.state.placements.length) return;
     setError("");
+    // Pages spike: until chunk 3 assembles the pages, only the original can be stamped.
+    if (!isUntouched(s.state.slots(), s.id, s.pdf.pages.length)) {
+      setError("Downloading after changing pages isn't ready yet (Pages spike, chunk 3).");
+      return;
+    }
     s.setSaving(true);
     try {
       const images = new Map<string, Uint8Array>();
@@ -532,7 +538,7 @@ export function App() {
                 {(s) => {
                   const base = () => s().name.replace(/\.pdf$/i, "");
                   const ext = () => s().name.slice(base().length);
-                  const pages = () => s().pdf.pages.length;
+                  const pages = () => s().state.slots().length;
                   return (
                     <div class="doc-title" title={s().name}>
                       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -665,7 +671,7 @@ export function App() {
           >
             {(s) => (
               <Viewer
-                pdf={s.pdf}
+                doc={s.state}
                 zoom={s.zoom()}
                 onZoom={(z) => s.setZoom(clampZoom(z))}
                 onPageChange={s.setPage}
@@ -702,11 +708,11 @@ export function App() {
                   <input
                     type="number"
                     min="1"
-                    max={s().pdf.pages.length}
+                    max={s().state.slots().length}
                     value={s().page()}
                     onChange={(e) => viewer?.goToPage(Number(e.currentTarget.value))}
                   />
-                  / {s().pdf.pages.length}
+                  / {s().state.slots().length}
                 </label>
                 <span class="zoom">
                   <button title="Zoom out (Ctrl −)" aria-label="Zoom out" onClick={() => zoomTo(stepZoom(s().zoom(), -1))}>

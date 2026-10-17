@@ -2,8 +2,18 @@
 // Page operations (insert, delete, move) edit this list; the PDF bytes are only
 // assembled from it at download. Placements keep 1-based page numbers, so every
 // operation remaps them by following each slot's key to its new position.
-import type { PageSize } from "../viewer/pdf";
+import type { LoadedPdf, PageSize } from "../viewer/pdf";
 import type { Placement } from "./placement";
+
+/** A PDF that pages come from: the opened document, or one inserted into it. */
+export interface Source {
+  /** Its SHA-256, like a document's id: the same file is one source however often it's inserted. */
+  id: string;
+  name: string;
+  bytes: Uint8Array;
+  /** Open in pdf.js, to render its pages. */
+  pdf: LoadedPdf;
+}
 
 /** One page of the document: page `index` (0-based) of source `source`, at its display size. */
 export interface Slot extends PageSize {

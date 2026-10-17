@@ -2,7 +2,7 @@
 import { createContext, createEffect, createSignal, useContext, type ParentProps } from "solid-js";
 import { createStore, unwrap, type SetStoreFunction } from "solid-js/store";
 import { createDocState, isDirty, savedKey, snapshotOf, stateOf, type DocState } from "./docState";
-import { deletePages, insertSlots, movePages, type NewSlot, type PagesState } from "./pages";
+import { deletePages, insertSlots, movePages, type NewSlot, type PagesState, type Source } from "./pages";
 import type { PageSize } from "../viewer/pdf";
 import {
   centeredAt,
@@ -439,6 +439,20 @@ function createEditor() {
 
     /** The active document's page list. */
     slots: () => doc().slots(),
+    /**
+     * Makes a PDF available for inserting pages from, and returns the source to use:
+     * if the same file is already there, that one (and the new copy is closed).
+     */
+    addSource(source: Source): Source {
+      const d = doc();
+      const existing = d.sources.get(source.id);
+      if (existing) {
+        if (existing !== source) void source.pdf.close();
+        return existing;
+      }
+      d.sources.set(source.id, source);
+      return source;
+    },
     /** Inserts pages before 0-based position `at` (the page count: at the end). One undo step. */
     insertPages(at: number, pages: NewSlot[]) {
       if (!pages.length) return;

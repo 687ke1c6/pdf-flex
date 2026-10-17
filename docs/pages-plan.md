@@ -94,8 +94,8 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 |---|---|---|---|
 | 0 | Feature flag | Flag off: nothing changes. Flag on: a placeholder Pages tool appears | ✅ (pending your check) |
 | 1 | Page list model | Insert/delete/move are pure functions with unit tests; placements remap; undo covers both | ✅ (pending your check) |
-| 2 | Viewer renders the page list | A document whose slots come from two PDFs displays, zooms and accepts placements | 🔜 |
-| 3 | Assembly at download | Download of an edited page list gives the right pages, with items where they were placed; Bun test over the corpus | ⬜ |
+| 2 | Viewer renders the page list | A document whose slots come from two PDFs displays, zooms and accepts placements | ✅ (pending your check) |
+| 3 | Assembly at download | Download of an edited page list gives the right pages, with items where they were placed; Bun test over the corpus | 🔜 |
 | 4 | Pages panel: delete and blank page | Delete and add blank pages from the panel, undo them, download | ⬜ |
 | 5 | Insert from another PDF | Insert all or some pages of another PDF anywhere, by button or drop | ⬜ |
 | 6 | Drafts | Reloading restores inserted and deleted pages | ⬜ |
@@ -156,6 +156,30 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 - Page sizes come from slots (each source's pdf.js sizes, already checked against the stamper when it was added).
 - Closing a tab closes every source's pdf.js document.
 - **Your check:** with the flag off, viewing, zoom, scroll position across tabs and placing items all behave as before.
+
+**As built**
+- **Sources:**
+  - `Source { id, name, bytes, pdf }` (`pages.ts`). `DocState.sources` is a plain map that is only ever added to: an undo can bring back a page whose source is no longer in the list.
+  - The session registers the original under the document id, and `dispose` closes every source.
+  - `editor.addSource` returns the source already there for the same file.
+- **Viewer:**
+  - Iterates `doc.slots()` (prop `doc: DocState` instead of `pdf: LoadedPdf`), keyed by slot, so a moved page keeps its element and canvas.
+  - `PageView` takes `doc` + `sourcePage` (what to render) apart from `pageNumber` (its position, for the overlay).
+  - Page elements are read from the DOM instead of an index-assigned array. The visibility observer is reset whenever the slots change.
+  - Fit width uses the slots' widths.
+- **App:** the page count in the page box and the title comes from the slots.
+- **Scaffolding, replaced by chunks 3–5:**
+  - **Append PDF…** in the Pages panel adds every page of a PDF at the end. `pages/source.ts` (`sourceFrom`) is kept for chunk 5: same file → same source, the stamper's `inspectPdf` first (so restricted files are refused), then pdf.js, then `sameLayout`.
+  - **Download** refuses with a message while the page list isn't the untouched original.
+- **Known gap until chunk 6:** autosave doesn't store pages yet. A draft saved after appending pages, restored later, has items on pages that don't exist (hidden, and download fails). Flag-only.
+- **Verified (no browser):** `just test` (Rust, plus 101 web tests), `just lint` and `just build` pass.
+- **Your checks:**
+  1. **Flag off** (regression): open, scroll, zoom (buttons, Ctrl+wheel, pinch), fit width, go to page, scroll position when switching tabs, place and drag items across pages, download.
+  2. **Flag on:** Pages tool → **Append PDF…** with a rotated fixture (`out/fixtures/rotate-90.pdf`), then a different-size one. The new pages appear at the end, sharp at any zoom, and the page count updates.
+  3. Place items on an appended page and drag one across to an original page. Undo removes the appended pages and the items on them; redo brings them back.
+  4. Append the same file twice: both copies render (it's one source).
+  5. Append `crates/pdf-stamp/tests/corpus/generated/encrypted-user-password.pdf`: refused with the "password-protected" message.
+  6. Download after appending: refused with the "not ready yet" message.
 
 ### Chunk 3: Assembly at download
 - `download/assemble.ts`: if the slots are the untouched original, return the original bytes. Otherwise call `extractPages` with one entry per contiguous run of the same source, in final order. Blank pages come from a generated one-page PDF.
