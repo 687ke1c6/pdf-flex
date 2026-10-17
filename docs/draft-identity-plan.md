@@ -160,6 +160,7 @@ All four go once the draft, not the file, is the anchor.
   - Decision 3 changed to match: drafts open in a tab are offered too, as a switch, rather than skipped.
 - **Opening a file** brings forward only a tab where that file is **untouched**: exactly its pages, nothing placed. Otherwise it's a new tab (decision 5). Tabs were already keyed by draft id in chunk 2 (`tabDocId` is the session id, and `savedTabs` stores those).
 - **Decision 9, rest:** a PDF inserted later that is digitally signed adds a warning to the document's warnings ("“b.pdf” is digitally signed …"). `sourceFrom` keeps the result of its check on the source (`digitallySigned`).
+- **Fix after your check:** **Switch to it** also closes the tab it's pressed in. That tab is a fresh, untouched copy of the file (the offer goes at the first change), so nothing is lost, and it's no longer wanted.
 - **Recent:** `DraftSummary.pdfs`; entries read "14 pages from 3 PDFs, 2 items · 820 KB · saved 14:32" (`describe`, also used by the banner). "Open in a tab" was already by draft id.
 - **Tests:** `describe` and `summarize().pdfs` in `drafts.test.ts`.
 
@@ -202,7 +203,7 @@ Built without per-chunk checks, so here they are in one pass (a fresh profile is
 5. **Start over:** on an offer, Start over and change something. Recent has both drafts, and the old one is unchanged. Opening pdf-a again says "There is 1 more in Recent".
 6. **Tabs (tabs on):**
    - Open pdf-a twice with nothing changed: one tab comes forward.
-   - Change something, open pdf-a again: a second tab, whose banner says you're working with it in another tab, and **Switch to it** goes there.
+   - Change something, open pdf-a again: a second tab, whose banner says you're working with it in another tab. **Switch to it** goes there and closes the second tab.
    - Close the first tab: the second tab's banner turns into Restore.
    - Reload: tabs come back by draft.
 7. **Tabs off:** the same, one document at a time; replacing asks first if work isn't in a draft.

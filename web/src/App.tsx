@@ -238,6 +238,22 @@ export function App() {
     }
   }
 
+  /**
+   * Switch to it, on the offer: goes to the tab the offered draft is open in, and
+   * closes this one. It's untouched (the offer goes at the first change), so nothing is lost.
+   */
+  async function switchTo(session: DocSession, draftId: string) {
+    const target = tabOf(draftId);
+    const here = tabs().find((t) => t.session === session);
+    if (!target) return;
+    batch(() => {
+      if (here) setTabs((list) => list.filter((t) => t.key !== here.key));
+      setActiveKey(target.key);
+    });
+    session.dispose();
+    await show(target.key);
+  }
+
   /** Brings a tab to the front, loading its document if it came back after a reload. */
   async function show(key: number) {
     setActiveKey(key);
@@ -696,7 +712,11 @@ export function App() {
                 fallback={
                   <>
                     <span>You're working with this file in another tab ({describe(summarize(draft()))}).{more()}</span>
-                    <button class="primary" onClick={() => elsewhere() && void show(elsewhere()!.key)}>
+                    <button
+                      class="primary"
+                      title="Go to that tab and close this one"
+                      onClick={() => active() && void switchTo(active()!, draft().id)}
+                    >
                       Switch to it
                     </button>
                     <button title="Start fresh from this file here" onClick={() => active()?.setOffer(null)}>
