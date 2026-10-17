@@ -4,6 +4,8 @@ A spike, behind a feature flag: **insert or append pages from other PDFs** into 
 
 The ground rules don't change: everything runs in the browser, nothing is uploaded, the original file is never modified, and every change can be undone.
 
+> **Status (2026-10-17): validated and being promoted.** Page operations made drafts outgrow "edits on one file", so drafts get their own identity first. That work, the review below (chunk 7) and removing the flag continue in [draft-identity-plan.md](draft-identity-plan.md).
+
 ---
 
 ## 1. Scope
@@ -100,7 +102,7 @@ Decided: build 1 now. Add 2's per-page menu later if the panel feels too far fro
 | 5 | Insert from another PDF | Insert all or some pages of another PDF anywhere, by button or drop | ✅ (pending your check) |
 | 5b | Insert dialog and thumbnail size | ＋ opens a dialog (blank page, or choose/drop a PDF); two thumbnail sizes | ✅ (pending your check) |
 | 6 | Drafts | Reloading restores inserted and deleted pages | ✅ (pending your check) |
-| 7 | Spike review | Decide: flag off and ship, adjust, or switch to option B | 🔜 |
+| 7 | Spike review | Decide: flag off and ship, adjust, or switch to option B | ✅ Promote, keeping option A. The review items moved to [draft-identity-plan.md](draft-identity-plan.md) chunk 6 |
 
 ### Chunk 0: Feature flag
 - `web/src/common/flags.ts`: `flag("pages")`, switched from an "Experimental" section in Settings and remembered in `localStorage` (wrapped in try/catch).
