@@ -24,6 +24,28 @@ function loadEnabled(): boolean {
 /** Whether drafts are kept (the switch in About). On unless turned off. */
 export const [draftsEnabled, setDraftsEnabledSignal] = createSignal(loadEnabled());
 
+const CONFIRM_DISCARD_KEY = "pdf-flex:confirm-discard";
+
+/** Whether discarding a draft from Recent asks first (the "Don't ask again" box, and its switch in About). On unless turned off. */
+export const [confirmDiscard, setConfirmDiscardSignal] = createSignal(
+  (() => {
+    try {
+      return localStorage.getItem(CONFIRM_DISCARD_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  })(),
+);
+
+export function setConfirmDiscard(on: boolean) {
+  setConfirmDiscardSignal(on);
+  try {
+    localStorage.setItem(CONFIRM_DISCARD_KEY, on ? "on" : "off");
+  } catch {
+    // Not remembered; the choice still applies for this session.
+  }
+}
+
 export function setDraftsEnabled(on: boolean) {
   setDraftsEnabledSignal(on);
   try {
@@ -61,7 +83,7 @@ interface Source {
 }
 
 /** Keeps `doc`'s draft up to date. Each open document has its own. */
-export function createAutosave(doc: DraftDocument, source: Source, store: Pick<typeof draftStore, "save"> = draftStore) {
+export function createAutosave(doc: DraftDocument, source: Source, store: Pick<typeof draftStore, "save" | "remove"> = draftStore) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** The write that's running, if one is: there's never more than one. */
   let running: Promise<void> | undefined;
@@ -166,9 +188,27 @@ export function createAutosave(doc: DraftDocument, source: Source, store: Pick<t
     return Promise.race([catchUp(), timeout]).finally(() => clearTimeout(limit));
   }
 
+  /**
+   * Deletes the draft from storage, and stops saving until the document changes
+   * again (a change then starts a new draft, with its PDFs written afresh).
+   */
+  async function discard(): Promise<void> {
+    clearTimeout(timer);
+    timer = undefined;
+    await running;
+    await store.remove(doc.id);
+    doc.sourcesSaved = new Set();
+    batch(() => {
+      setSaved(source.version());
+      setSavedAt(undefined);
+      setError(undefined);
+    });
+  }
+
   return {
     state,
     flush,
+    discard,
     /** Whether everything on the open document is in its draft. */
     upToDate: () => draftsEnabled() && !saving() && !changed(),
   };

@@ -2,7 +2,7 @@
 // from the status bar. One section per topic, so more can be added.
 import { For, onMount, Show } from "solid-js";
 import { flag, FLAGS, setFlag, type Flag } from "../common/flags";
-import { draftsEnabled, setDraftsEnabled } from "../drafts/autosave";
+import { confirmDiscard, draftsEnabled, setConfirmDiscard, setDraftsEnabled } from "../drafts/autosave";
 import { tabsMode } from "./tabs";
 import { darkMode, setDarkMode } from "./theme";
 
@@ -98,6 +98,10 @@ export function SettingsDialog(props: {
         <label class="row">
           <input type="checkbox" checked={draftsEnabled()} onChange={(e) => setDraftsEnabled(e.currentTarget.checked)} />
           Keep drafts of my work in this browser
+        </label>
+        <label class="row">
+          <input type="checkbox" checked={confirmDiscard()} onChange={(e) => setConfirmDiscard(e.currentTarget.checked)} />
+          Ask before discarding a draft
         </label>
       </section>
 

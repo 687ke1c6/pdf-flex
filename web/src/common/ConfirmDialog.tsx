@@ -8,6 +8,9 @@ interface Request {
   confirm: string;
   /** Going ahead loses work: the button is red. */
   danger?: boolean;
+  /** Offers a checkbox with this label; if it's ticked when the user goes ahead, `onRemember` is called. */
+  remember?: string;
+  onRemember?(): void;
   resolve(ok: boolean): void;
 }
 
@@ -31,9 +34,11 @@ export function ConfirmHost() {
 function ConfirmDialog(props: { request: Request }) {
   let dialog!: HTMLDialogElement;
   let ok = false;
+  const [remember, setRemember] = createSignal(false);
   onMount(() => dialog.showModal());
 
   function close() {
+    if (ok && remember()) props.request.onRemember?.();
     props.request.resolve(ok);
     if (request() === props.request) setRequest(null);
   }
@@ -48,6 +53,12 @@ function ConfirmDialog(props: { request: Request }) {
       >
         <h2>{props.request.title}</h2>
         <p>{props.request.message}</p>
+        <Show when={props.request.remember}>
+          <label class="row">
+            <input type="checkbox" checked={remember()} onChange={(e) => setRemember(e.currentTarget.checked)} />
+            {props.request.remember}
+          </label>
+        </Show>
         <div class="dialog-actions">
           {/* Cancel comes first in the tab order and has focus, so Enter doesn't lose work by accident. */}
           <button type="button" autofocus onClick={() => dialog.close()}>

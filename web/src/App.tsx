@@ -395,7 +395,7 @@ export function App() {
     if (hasChanges(active())) setNaming(true);
   }
 
-  async function save(filename: string) {
+  async function save(filename: string, deleteDraft: boolean) {
     const s = active();
     editor.endEdit();
     if (!s || !hasChanges(s)) return;
@@ -411,6 +411,13 @@ export function App() {
       const pdf = await pagesPdf(s.state);
       download(await stampPdf(pdf, s.state.placements, images), filename);
       editor.markSaved(s.state);
+      if (deleteDraft) {
+        try {
+          await s.autosave.discard();
+        } catch (err) {
+          setError(`Downloaded, but couldn't delete the draft: ${err instanceof Error ? err.message : err}`);
+        }
+      }
     } catch (err) {
       setError(`Couldn't save: ${err instanceof Error ? err.message : err}`);
     } finally {
@@ -692,7 +699,7 @@ export function App() {
       </Show>
 
       <Show when={naming() && active()}>
-        {(s) => <DownloadDialog name={s().name} onDownload={(name) => void save(name)} onClose={() => setNaming(false)} />}
+        {(s) => <DownloadDialog name={s().name} onDownload={(name, deleteDraft) => void save(name, deleteDraft)} onClose={() => setNaming(false)} />}
       </Show>
 
       <Show when={editor.creatingSignature()}>

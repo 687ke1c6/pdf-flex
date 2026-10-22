@@ -29,7 +29,8 @@ export function DownloadButton(props: {
 interface Props {
   /** The document's own file name. */
   name: string;
-  onDownload(filename: string): void;
+  /** `deleteDraft`: the user ticked the box to delete the document's draft once it's downloaded. */
+  onDownload(filename: string, deleteDraft: boolean): void;
   onClose(): void;
 }
 
@@ -38,6 +39,7 @@ export function DownloadDialog(props: Props) {
   let input!: HTMLInputElement;
   const suggestion = suggestedName(props.name);
   const [typed, setTyped] = createSignal(suggestion.name);
+  const [deleteDraft, setDeleteDraft] = createSignal(false);
   const filename = () => cleanFileName(typed());
 
   onMount(() => {
@@ -52,7 +54,7 @@ export function DownloadDialog(props: Props) {
     const name = filename();
     if (!name) return;
     dialog.close();
-    props.onDownload(name);
+    props.onDownload(name, deleteDraft());
   }
 
   return (
@@ -73,6 +75,10 @@ export function DownloadDialog(props: Props) {
         <Show when={filename() && filename() !== typed().trim()}>
           <p class="hint">Saved as {filename()}</p>
         </Show>
+        <label class="row">
+          <input type="checkbox" checked={deleteDraft()} onChange={(e) => setDeleteDraft(e.currentTarget.checked)} />
+          Delete the draft after downloading
+        </label>
         <div class="dialog-actions">
           <button type="button" onClick={() => dialog.close()}>
             Cancel
