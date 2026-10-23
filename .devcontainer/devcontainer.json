@@ -10,9 +10,6 @@
     "5172": { "label": "vite" },
     "8080": { "label": "pdf-flex-server" }
   },
-  "mounts": [
-    "source=${env:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"
-  ],
   "customizations": {
     "vscode": {
       "extensions": [
